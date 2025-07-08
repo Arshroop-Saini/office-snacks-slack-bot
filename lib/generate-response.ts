@@ -27,11 +27,11 @@ export const generateResponse = async (
         apiKey: process.env.CROSSMINT_API_KEY as string,
       }),
       splToken({
-        network: "mainnet",
+        network: "devnet",
       }),
     ],
   });
-  
+
   // Combine on-chain tools with our web tool
   const tools = {
     ...onChainTools,
