@@ -14,69 +14,74 @@ type Product = {
     description?: string;
 };
 
-function formatProductBlocks(products: Product[], page: number, pagination: any, query: string) {
+// Helper to paginate products
+function paginateProducts(products: Product[], page: number, perPage: number) {
+    const totalPages = Math.ceil(products.length / perPage);
+    const start = (page - 1) * perPage;
+    const end = start + perPage;
+    return {
+        pageProducts: products.slice(start, end),
+        totalPages,
+    };
+}
+
+function formatProductBlocks(products: Product[], page: number, totalPages: number, query: string) {
     const blocks = [];
-    // Add a header with page info
+    // Header
     blocks.push({
         type: "section",
         text: {
             type: "mrkdwn",
-            text: `*Amazon Results for:* \`${query}\`  |  *Page:* ${page}`,
+            text: `*Amazon Results for:* \`${query}\`  |  *Page:* ${page} of ${totalPages}`,
         },
     });
+    // Products
     for (const [i, product] of products.entries()) {
-        blocks.push(
-            {
-                type: "section",
-                text: {
-                    type: "mrkdwn",
-                    text: `*<${product.url}|${product.title}>*\n${product.description || ""}\n*Price:* ${product.price || "N/A"} ${product.currency || ""}  *Rating:* ${product.rating || "N/A"} (${product.ratings_total || 0})\n*ETA:* ${product.eta || "N/A"}`,
+        blocks.push({
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}`,
+            },
+            accessory: product.image ? {
+                type: "image",
+                image_url: product.image,
+                alt_text: product.title,
+            } : undefined,
+        });
+        blocks.push({
+            type: "actions",
+            elements: [
+                {
+                    type: "button",
+                    text: { type: "plain_text", text: "Select" },
+                    value: JSON.stringify({ productIndex: i, query, page }),
+                    action_id: `select_product_${i}`,
                 },
-                accessory: product.image
-                    ? {
-                        type: "image",
-                        image_url: product.image,
-                        alt_text: product.title,
-                    }
-                    : undefined,
-            },
-            {
-                type: "actions",
-                elements: [
-                    {
-                        type: "button",
-                        text: { type: "plain_text", text: "Select" },
-                        value: JSON.stringify({ productIndex: i, query, page }),
-                        action_id: `select_product_${i}`,
-                    },
-                ],
-            },
-            { type: "divider" }
-        );
+            ],
+        });
+        blocks.push({ type: "divider" });
     }
     // Pagination controls
-    const paginationElements = [];
+    const elements = [];
     if (page > 1) {
-        paginationElements.push({
+        elements.push({
             type: "button",
             text: { type: "plain_text", text: "Back" },
             value: JSON.stringify({ query, page: page - 1 }),
             action_id: "back_page",
         });
     }
-    if (pagination && pagination.next) {
-        paginationElements.push({
+    if (page < totalPages) {
+        elements.push({
             type: "button",
             text: { type: "plain_text", text: "Next" },
             value: JSON.stringify({ query, page: page + 1 }),
             action_id: "next_page",
         });
     }
-    if (paginationElements.length > 0) {
-        blocks.push({
-            type: "actions",
-            elements: paginationElements,
-        });
+    if (elements.length > 0) {
+        blocks.push({ type: "actions", elements });
     }
     return blocks;
 }
@@ -114,7 +119,8 @@ export async function POST(request: Request) {
                             const { query, page } = parsedValue;
                             const perPage = 10; // Always 10 per page
                             const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                            const blocks = formatProductBlocks(products, page, apiPagination, query);
+                            const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
+                            const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
                             const responseBody = {
                                 response_type: "in_channel",
                                 replace_original: true,
@@ -192,7 +198,8 @@ export async function POST(request: Request) {
                 );
             }
             // Only return Slack-allowed fields in the slash command response
-            const blocks = formatProductBlocks(products, page, apiPagination, query);
+            const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
+            const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
             const responseBody: any = {
                 response_type: "in_channel",
                 text: `Amazon search results for "${query}":`,
@@ -241,7 +248,8 @@ export async function POST(request: Request) {
                         const { query, page } = parsedValue;
                         const perPage = 20; // Show all results for the page
                         const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                        const blocks = formatProductBlocks(products, page, apiPagination, query);
+                        const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
+                        const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
                         const responseBody = {
                             response_type: "in_channel",
                             replace_original: true,
