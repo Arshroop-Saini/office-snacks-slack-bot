@@ -22,10 +22,18 @@
     "@slack/web-api": "^7.0.2",
     "@solana/web3.js": "1.98.0",
     "@vercel/functions": "^2.0.0",
-    "ai": "~4.0.3",
+    "ai": "~4.3.17",
     "bs58": "^6.0.0",
     "pnpm": "10.12.4",
     "zod": "3.23.8"
+  },
+  "pnpm": {
+    "overrides": {
+      "@ai-sdk/anthropic": "^1.2.12",
+      "@ai-sdk/provider": "^1.1.3",
+      "ai": "^4.0.41",
+      "zod": "^3.24.6"
+    }
   },
   "devDependencies": {
     "@types/node": "^20.11.17",

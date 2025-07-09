@@ -1,4 +1,3 @@
-import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { getOnChainTools } from "@goat-sdk/adapter-vercel-ai";
 import { solana } from "@goat-sdk/wallet-solana";
