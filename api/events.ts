@@ -44,11 +44,13 @@ export async function POST(request: Request) {
       waitUntil(assistantThreadMessage(event));
     }
 
+    // Allow the bot to process any message that mentions it with the buy command, even if sent by the bot
     if (
       event.type === "message" &&
       !event.subtype &&
-      !event.bot_id &&
-      !event.bot_profile
+      event.text &&
+      event.text.includes(`<@${botUserId}>`) &&
+      /buy this https?:\/\//i.test(event.text)
     ) {
       waitUntil(handleNewAssistantMessage(event, botUserId));
     }
