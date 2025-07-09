@@ -52,7 +52,18 @@ export async function POST(request: Request) {
       event.text.includes(`<@${botUserId}>`) &&
       /buy this https?:\/\//i.test(event.text)
     ) {
+      console.log('[EVENTS] Triggering order flow for message:', event.text, 'from user:', event.user, 'bot_id:', event.bot_id, 'bot_profile:', event.bot_profile);
       waitUntil(handleNewAssistantMessage(event, botUserId));
+    }
+
+    // Fallback: If Slack sends an app_mention event for the bot's own message, handle it too
+    if (
+      event.type === "app_mention" &&
+      event.text &&
+      /buy this https?:\/\//i.test(event.text)
+    ) {
+      console.log('[EVENTS] Triggering order flow for app_mention:', event.text, 'from user:', event.user, 'bot_id:', event.bot_id, 'bot_profile:', event.bot_profile);
+      waitUntil(handleNewAppMention(event, botUserId));
     }
 
     return new Response("Success!", { status: 200 });
