@@ -1,6 +1,6 @@
 import { amazonSearchTool } from "../lib/tools/amazon-search.tool";
 import { generateResponse } from "../lib/generate-response";
-import { client } from "../lib/slack-utils";
+import { client, getBotId } from "../lib/slack-utils";
 import type { CoreMessage } from "ai";
 
 export const maxDuration = 60;
@@ -127,8 +127,12 @@ export async function POST(request: Request) {
                             const { products } = await amazonSearchTool.execute({ query, page, perPage });
                             const product = products[productIndex];
                             if (!product) throw new Error("Product not found for selection");
-                            // Compose a message tagging the bot with the Amazon link
-                            const botMention = `<@${process.env.SLACK_BOT_USER_ID || 'BOT_USER_ID'}>`;
+                            // Fetch bot user ID dynamically if not set
+                            let botUserId = process.env.SLACK_BOT_USER_ID;
+                            if (!botUserId) {
+                                botUserId = await getBotId();
+                            }
+                            const botMention = `<@${botUserId}>`;
                             const userMessage = `${botMention} buy this ${product.url}`;
                             // Post the message to the same channel/thread as the original message
                             const channel = payload.channel?.id || payload.channel_id || payload.container?.channel_id;
