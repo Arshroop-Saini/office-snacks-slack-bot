@@ -67,6 +67,7 @@ The current Slack bot (Snackbot) was designed to automate office snack and equip
 
 - Verified: Bot is working for general order placement when sent an Amazon link. Order submission flow and link processing are complete and functional.
 - Starting implementation of Amazon product search tool (SearchApi.io) for /search command integration.
+- User reports: Select button does not trigger order flow, and bot only responds when tagged. Needs end-to-end fix so Select triggers order flow and bot responds in thread/DM without tagging.
 
 # Lessons
 

@@ -160,12 +160,14 @@ export async function POST(request: Request) {
                             ];
                             // Call generateResponse to trigger the order flow
                             const result = await generateResponse(messages);
-                            // Post the result back to Slack
+                            // Post the result back to Slack in the same thread
                             const responseBody = {
                                 response_type: "in_channel",
                                 replace_original: false,
                                 text: result,
+                                thread_ts: payload.message?.thread_ts || payload.message?.ts // ensure reply in thread
                             };
+                            console.log("[COMMAND] Posting order flow result to Slack:", JSON.stringify(responseBody, null, 2));
                             await fetch(responseUrl, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },

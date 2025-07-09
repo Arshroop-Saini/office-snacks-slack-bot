@@ -47,10 +47,8 @@ export async function POST(request: Request) {
     if (
       event.type === "message" &&
       !event.subtype &&
-      ["im", "channel"].includes(event.channel_type) &&
       !event.bot_id &&
-      !event.bot_profile &&
-      event.bot_id !== botUserId
+      !event.bot_profile
     ) {
       waitUntil(handleNewAssistantMessage(event, botUserId));
     }
