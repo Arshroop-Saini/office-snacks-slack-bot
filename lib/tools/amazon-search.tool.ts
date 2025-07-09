@@ -17,8 +17,12 @@ export const amazonSearchTool = {
 
         const url = `https://www.searchapi.io/api/v1/search?engine=amazon&amazon_domain=amazon.com&q=${encodeURIComponent(query)}&page=${page}&api_key=${apiKey}`;
         const response = await fetch(url);
-        if (!response.ok) throw new Error(`Amazon search failed: ${response.statusText}`);
-        const data = await response.json();
+        const responseBody = await response.text();
+        if (!response.ok) {
+            console.error("[AMAZON SEARCH TOOL] API error", { status: response.status, body: responseBody });
+            throw new Error(`Amazon search failed: ${response.statusText} - ${responseBody}`);
+        }
+        const data = JSON.parse(responseBody);
 
         // Map results to a simplified product structure
         const products = (data.products || []).slice(0, perPage).map((product: any) => ({
