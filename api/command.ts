@@ -52,17 +52,7 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
                 alt_text: product.title,
             } : undefined,
         });
-        blocks.push({
-            type: "actions",
-            elements: [
-                {
-                    type: "button",
-                    text: { type: "plain_text", text: "Select" },
-                    value: JSON.stringify({ productIndex: i, query, page }),
-                    action_id: `select_product_${i}`,
-                },
-            ],
-        });
+        // Removed Select button actions block
         blocks.push({ type: "divider" });
     }
     // Pagination controls
