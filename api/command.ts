@@ -180,7 +180,7 @@ export async function POST(request: Request) {
             const perPage = 20;
             console.log("[COMMAND] Executing Amazon search", { query });
             const { products, page, pagination: apiPagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
-            console.log("[COMMAND] Amazon search results", { products, page, apiPagination });
+            console.log("[COMMAND] Amazon search results", { productsCount: products.length, page, apiPagination });
             if (!products.length) {
                 console.log("[COMMAND] No products found");
                 return new Response(JSON.stringify({ response_type: "ephemeral", text: `No products found for \"${query}\".` }), {
@@ -188,11 +188,12 @@ export async function POST(request: Request) {
                     headers: { "Content-Type": "application/json" },
                 });
             }
+            // Only return Slack-allowed fields in the slash command response
             const blocks = formatProductBlocks(products, page, apiPagination, query);
             return new Response(
                 JSON.stringify({
                     response_type: "in_channel",
-                    text: `Amazon search results for "${query}":`,
+                    text: `Amazon search results for \"${query}\":`,
                     blocks,
                 }),
                 { status: 200, headers: { "Content-Type": "application/json" } }
