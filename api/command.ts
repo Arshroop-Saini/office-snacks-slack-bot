@@ -192,6 +192,7 @@ export async function POST(request: Request) {
             return new Response(
                 JSON.stringify({
                     response_type: "in_channel",
+                    text: `Amazon search results for "${query}":`,
                     blocks,
                 }),
                 { status: 200, headers: { "Content-Type": "application/json" } }
