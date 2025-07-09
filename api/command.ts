@@ -73,7 +73,8 @@ export async function POST(request: Request) {
             const action = payload.actions[0];
             if (action.action_id === "next_page") {
                 const { query, page } = JSON.parse(action.value);
-                const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage: 5 });
+                const perPage = 10;
+                const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
                 const blocks = formatProductBlocks(products, page, hasNextPage, query);
                 return new Response(
                     JSON.stringify({
@@ -122,8 +123,10 @@ export async function POST(request: Request) {
     }
 
     try {
+        const perPage = 10;
         console.log("[COMMAND] Executing Amazon search", { query });
-        const { products, page, hasNextPage } = await amazonSearchTool.execute({ query, page: 1, perPage: 5 });
+        const { products, page, totalResults } = await amazonSearchTool.execute({ query, page: 1, perPage });
+        const hasNextPage = (page * perPage) < totalResults;
         console.log("[COMMAND] Amazon search results", { products, page, hasNextPage });
         if (!products.length) {
             console.log("[COMMAND] No products found");
