@@ -12,23 +12,27 @@ export async function assistantThreadMessage(
   console.log(`Thread started: ${channel_id} ${thread_ts}`);
   console.log(JSON.stringify(event));
 
-  await client.chat.postMessage({
-    channel: channel_id,
-    thread_ts: thread_ts,
-    text: "Hi there! I'm your office snacks assistant. What can I get for you today?",
-  });
+  try {
+    await client.chat.postMessage({
+      channel: channel_id,
+      thread_ts: thread_ts,
+      text: "Hi there! I'm your office snacks assistant. What can I get for you today?",
+    });
 
-  await client.assistant.threads.setSuggestedPrompts({
-    channel_id: channel_id,
-    thread_ts: thread_ts,
-    prompts: [
-      {
-        title: "Buy this product",
-        message:
-          "Buy this https://www.amazon.com/Croix-Sparkling-Water-Grapefruit-Count/dp/B01MTDGVVY/ref=sr_1_1?s=grocery&sr=1-1",
-      },
-    ],
-  });
+    await client.assistant.threads.setSuggestedPrompts({
+      channel_id: channel_id,
+      thread_ts: thread_ts,
+      prompts: [
+        {
+          title: "Buy this product",
+          message:
+            "Buy this https://www.amazon.com/Croix-Sparkling-Water-Grapefruit-Count/dp/B01MTDGVVY/ref=sr_1_1?s=grocery&sr=1-1",
+        },
+      ],
+    });
+  } catch (error) {
+    console.error("Error in assistantThreadMessage:", error);
+  }
 }
 
 export async function handleNewAssistantMessage(
@@ -44,27 +48,42 @@ export async function handleNewAssistantMessage(
     return;
 
   const { thread_ts, channel } = event;
-  const updateStatus = updateStatusUtil(channel, thread_ts);
-  updateStatus("is thinking...");
 
-  const messages = await getThread(channel, thread_ts, botUserId);
-  const result = await generateResponse(messages, updateStatus);
+  try {
+    const updateStatus = updateStatusUtil(channel, thread_ts);
+    await updateStatus("is thinking...");
 
-  await client.chat.postMessage({
-    channel: channel,
-    thread_ts: thread_ts,
-    text: result,
-    unfurl_links: false,
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: result,
+    const messages = await getThread(channel, thread_ts, botUserId);
+    const result = await generateResponse(messages, updateStatus);
+    console.log("Generated response for assistant message:", result);
+
+    await client.chat.postMessage({
+      channel: channel,
+      thread_ts: thread_ts,
+      text: result,
+      unfurl_links: false,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: result,
+          },
         },
-      },
-    ],
-  });
+      ],
+    });
 
-  updateStatus("");
+    await updateStatus("");
+  } catch (error) {
+    console.error("Error in handleNewAssistantMessage:", error);
+    try {
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: thread_ts,
+        text: "Sorry, I encountered an error while processing your request. Please try again.",
+      });
+    } catch (errorPostingError) {
+      console.error("Failed to post error message:", errorPostingError);
+    }
+  }
 }

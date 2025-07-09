@@ -59,11 +59,18 @@ export const verifyRequest = async ({
 
 export const updateStatusUtil = (channel: string, thread_ts: string) => {
   return async (status: string) => {
-    await client.assistant.threads.setStatus({
-      channel_id: channel,
-      thread_ts: thread_ts,
-      status: status,
-    });
+    try {
+      console.log("Setting assistant thread status:", status);
+      await client.assistant.threads.setStatus({
+        channel_id: channel,
+        thread_ts: thread_ts,
+        status: status,
+      });
+      console.log("Assistant thread status set successfully");
+    } catch (error) {
+      console.error("Error setting assistant thread status:", error);
+      // This is expected to fail for non-assistant threads, so we'll just log it
+    }
   };
 };
 

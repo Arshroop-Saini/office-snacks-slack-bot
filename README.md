@@ -49,3 +49,4 @@ Ready to deploy your own Office Snacks Bot? Check out the [setup guide](SETUP.md
 ## 📝 License
 
 MIT
+#yes mit liscence!!
