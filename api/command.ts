@@ -56,7 +56,7 @@ function formatProductBlocks(products: Product[], page: number, pagination: any,
     }
     // Pagination controls
     const paginationElements = [];
-    if (pagination && pagination.previous) {
+    if (page > 1) {
         paginationElements.push({
             type: "button",
             text: { type: "plain_text", text: "Back" },
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
                     setTimeout(async () => {
                         try {
                             const { query, page } = parsedValue;
-                            const perPage = 20; // Show all results for the page
+                            const perPage = 10; // Always 10 per page
                             const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
                             const blocks = formatProductBlocks(products, page, apiPagination, query);
                             const responseBody = {
@@ -177,7 +177,7 @@ export async function POST(request: Request) {
             });
         }
         try {
-            const perPage = 10; // Show 10 products per page for Slack
+            const perPage = 10; // Always 10 per page
             console.log("[COMMAND] Executing Amazon search", { query });
             const { products, page, pagination: apiPagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
             console.log("[COMMAND] Amazon search results", { productsCount: products.length, page, apiPagination });
@@ -192,7 +192,7 @@ export async function POST(request: Request) {
                 );
             }
             // Only return Slack-allowed fields in the slash command response
-            const blocks = formatProductBlocks(products.slice(0, perPage), page, apiPagination, query);
+            const blocks = formatProductBlocks(products, page, apiPagination, query);
             return new Response(
                 JSON.stringify({
                     response_type: "in_channel",
