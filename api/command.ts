@@ -138,10 +138,16 @@ export async function POST(request: Request) {
                             const channel = payload.channel?.id || payload.channel_id || payload.container?.channel_id;
                             const thread_ts = payload.message?.thread_ts || payload.message?.ts;
                             if (!channel) throw new Error("Channel not found in payload");
-                            await client.chat.postMessage({
-                                channel,
+                            // Post the message as the user who clicked the button using response_url
+                            const responseBody = {
+                                response_type: "in_channel",
                                 text: userMessage,
-                                thread_ts,
+                                thread_ts: thread_ts,
+                            };
+                            await fetch(responseUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(responseBody),
                             });
                             // Optionally, post an ephemeral confirmation to the user
                             await fetch(responseUrl, {
