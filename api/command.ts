@@ -65,8 +65,93 @@ function formatProductBlocks(products: Product[], page: number, hasNextPage: boo
 export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") || "";
     console.log("[COMMAND] Incoming request", { contentType });
+
+    // 1. Handle Slack block actions sent as x-www-form-urlencoded (the usual case)
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+        const formData = await request.text();
+        const params = Object.fromEntries(new URLSearchParams(formData));
+        if (params.payload) {
+            // This is a block action
+            const payload = JSON.parse(params.payload);
+            console.log("[COMMAND] Interactivity payload", payload);
+            if (payload.type === "block_actions") {
+                const action = payload.actions[0];
+                if (action.action_id === "next_page") {
+                    const { query, page } = JSON.parse(action.value);
+                    const perPage = 10;
+                    const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
+                    const blocks = formatProductBlocks(products, page, hasNextPage, query);
+                    return new Response(
+                        JSON.stringify({
+                            response_type: "in_channel",
+                            replace_original: true,
+                            blocks,
+                        }),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    );
+                } else if (action.action_id.startsWith("select_product_")) {
+                    // Product selection: confirm and trigger order flow (placeholder)
+                    const productIndex = JSON.parse(action.value).productIndex;
+                    // For now, just confirm selection
+                    return new Response(
+                        JSON.stringify({
+                            response_type: "in_channel",
+                            replace_original: false,
+                            text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                        }),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    );
+                }
+            }
+            return new Response("", { status: 200 });
+        }
+        // Otherwise, treat as a slash command
+        console.log("[COMMAND] Raw form data", formData);
+        console.log("[COMMAND] Parsed params", params);
+        if (!params.command || params.command !== "/amazon") {
+            console.log("[COMMAND] Unknown command", params.command);
+            return new Response("Unknown command", { status: 400 });
+        }
+        const query = params.text?.trim();
+        if (!query) {
+            console.log("[COMMAND] No query provided");
+            return new Response(JSON.stringify({ response_type: "ephemeral", text: "Please provide a search query." }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        try {
+            const perPage = 10;
+            console.log("[COMMAND] Executing Amazon search", { query });
+            const { products, page, totalResults } = await amazonSearchTool.execute({ query, page: 1, perPage });
+            const hasNextPage = (page * perPage) < totalResults;
+            console.log("[COMMAND] Amazon search results", { products, page, hasNextPage });
+            if (!products.length) {
+                console.log("[COMMAND] No products found");
+                return new Response(JSON.stringify({ response_type: "ephemeral", text: `No products found for \"${query}\".` }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+            const blocks = formatProductBlocks(products, page, hasNextPage, query);
+            return new Response(
+                JSON.stringify({
+                    response_type: "in_channel",
+                    blocks,
+                }),
+                { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+        } catch (err: any) {
+            console.error("[COMMAND] Error in Amazon search", err);
+            return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: ${err.message}` }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+    }
+
+    // 2. Handle Slack interactivity payloads as application/json (rare, but possible)
     if (contentType.includes("application/json")) {
-        // Handle Slack interactivity payloads
         const payload = await request.json();
         console.log("[COMMAND] Interactivity payload", payload);
         if (payload.type === "block_actions") {
@@ -87,7 +172,6 @@ export async function POST(request: Request) {
             } else if (action.action_id.startsWith("select_product_")) {
                 // Product selection: confirm and trigger order flow (placeholder)
                 const productIndex = JSON.parse(action.value).productIndex;
-                const originalQuery = payload.message?.blocks?.[0]?.text?.text?.match(/for: (.*)/)?.[1] || "";
                 // For now, just confirm selection
                 return new Response(
                     JSON.stringify({
@@ -102,52 +186,6 @@ export async function POST(request: Request) {
         return new Response("", { status: 200 });
     }
 
-    // Handle slash command
-    const formData = await request.text();
-    console.log("[COMMAND] Raw form data", formData);
-    const params = Object.fromEntries(new URLSearchParams(formData));
-    console.log("[COMMAND] Parsed params", params);
-
-    if (!params.command || params.command !== "/amazon") {
-        console.log("[COMMAND] Unknown command", params.command);
-        return new Response("Unknown command", { status: 400 });
-    }
-
-    const query = params.text?.trim();
-    if (!query) {
-        console.log("[COMMAND] No query provided");
-        return new Response(JSON.stringify({ response_type: "ephemeral", text: "Please provide a search query." }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-        });
-    }
-
-    try {
-        const perPage = 10;
-        console.log("[COMMAND] Executing Amazon search", { query });
-        const { products, page, totalResults } = await amazonSearchTool.execute({ query, page: 1, perPage });
-        const hasNextPage = (page * perPage) < totalResults;
-        console.log("[COMMAND] Amazon search results", { products, page, hasNextPage });
-        if (!products.length) {
-            console.log("[COMMAND] No products found");
-            return new Response(JSON.stringify({ response_type: "ephemeral", text: `No products found for \"${query}\".` }), {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-            });
-        }
-        const blocks = formatProductBlocks(products, page, hasNextPage, query);
-        return new Response(
-            JSON.stringify({
-                response_type: "in_channel",
-                blocks,
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-    } catch (err: any) {
-        console.error("[COMMAND] Error in Amazon search", err);
-        return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: ${err.message}` }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-        });
-    }
+    // Fallback: unsupported content type
+    return new Response("Unsupported content type", { status: 400 });
 } 
