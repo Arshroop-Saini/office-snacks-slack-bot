@@ -61,12 +61,6 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
                     value: JSON.stringify({ productIndex: i, query, page }),
                     action_id: `select_product_${i}`,
                 },
-                {
-                    type: "button",
-                    text: { type: "plain_text", text: "Copy Link" },
-                    value: JSON.stringify({ productIndex: i, query, page }),
-                    action_id: `copy_link_${i}`,
-                },
             ],
         });
         blocks.push({ type: "divider" });
@@ -149,37 +143,7 @@ export async function POST(request: Request) {
                         status: 200,
                         headers: { "Content-Type": "application/json" },
                     });
-                }
-                // Handle Copy Link button
-                if (action.action_id.startsWith("copy_link_")) {
-                    setTimeout(async () => {
-                        try {
-                            const { productIndex, query, page } = parsedValue;
-                            const perPage = 10;
-                            // Fetch the products for the current page
-                            const { products } = await amazonSearchTool.execute({ query, page, perPage });
-                            const product = products[productIndex];
-                            if (!product) throw new Error("Product not found for copy link");
-                            // Respond ephemerally with the product URL
-                            const responseBody = {
-                                response_type: "ephemeral",
-                                text: `Here is the link: <${product.url}|${product.title}>`,
-                            };
-                            await fetch(responseUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
-                        } catch (err) {
-                            console.error("[COMMAND] (async) Error in copy_link action:", err);
-                        }
-                    }, 0);
-                    return new Response(JSON.stringify({ text: "Copied link!", response_type: "ephemeral" }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                }
-                else if (action.action_id.startsWith("select_product_")) {
+                } else if (action.action_id.startsWith("select_product_")) {
                     setTimeout(async () => {
                         try {
                             const { productIndex, query, page } = parsedValue;
