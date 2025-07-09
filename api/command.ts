@@ -64,9 +64,11 @@ function formatProductBlocks(products: Product[], page: number, hasNextPage: boo
 
 export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") || "";
+    console.log("[COMMAND] Incoming request", { contentType });
     if (contentType.includes("application/json")) {
         // Handle Slack interactivity payloads
         const payload = await request.json();
+        console.log("[COMMAND] Interactivity payload", payload);
         if (payload.type === "block_actions") {
             const action = payload.actions[0];
             if (action.action_id === "next_page") {
@@ -101,14 +103,18 @@ export async function POST(request: Request) {
 
     // Handle slash command
     const formData = await request.text();
+    console.log("[COMMAND] Raw form data", formData);
     const params = Object.fromEntries(new URLSearchParams(formData));
+    console.log("[COMMAND] Parsed params", params);
 
     if (!params.command || params.command !== "/amazon") {
+        console.log("[COMMAND] Unknown command", params.command);
         return new Response("Unknown command", { status: 400 });
     }
 
     const query = params.text?.trim();
     if (!query) {
+        console.log("[COMMAND] No query provided");
         return new Response(JSON.stringify({ response_type: "ephemeral", text: "Please provide a search query." }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -116,8 +122,11 @@ export async function POST(request: Request) {
     }
 
     try {
+        console.log("[COMMAND] Executing Amazon search", { query });
         const { products, page, hasNextPage } = await amazonSearchTool.execute({ query, page: 1, perPage: 5 });
+        console.log("[COMMAND] Amazon search results", { products, page, hasNextPage });
         if (!products.length) {
+            console.log("[COMMAND] No products found");
             return new Response(JSON.stringify({ response_type: "ephemeral", text: `No products found for \"${query}\".` }), {
                 status: 200,
                 headers: { "Content-Type": "application/json" },
@@ -132,6 +141,7 @@ export async function POST(request: Request) {
             { status: 200, headers: { "Content-Type": "application/json" } }
         );
     } catch (err: any) {
+        console.error("[COMMAND] Error in Amazon search", err);
         return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: ${err.message}` }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
