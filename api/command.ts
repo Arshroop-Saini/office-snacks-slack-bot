@@ -73,32 +73,45 @@ export async function POST(request: Request) {
         if (params.payload) {
             // This is a block action
             const payload = JSON.parse(params.payload);
-            console.log("[COMMAND] Interactivity payload", payload);
+            console.log("[COMMAND] Interactivity payload", JSON.stringify(payload, null, 2));
             if (payload.type === "block_actions") {
                 const action = payload.actions[0];
+                let parsedValue;
+                try {
+                    parsedValue = JSON.parse(action.value);
+                    console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
+                } catch (err) {
+                    console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
+                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
                 if (action.action_id === "next_page") {
-                    const { query, page } = JSON.parse(action.value);
+                    const { query, page } = parsedValue;
                     const perPage = 10;
                     const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
                     const blocks = formatProductBlocks(products, page, hasNextPage, query);
+                    const responseBody = {
+                        response_type: "in_channel",
+                        replace_original: true,
+                        blocks,
+                    };
+                    console.log("[COMMAND] Responding to next_page with:", JSON.stringify(responseBody, null, 2));
                     return new Response(
-                        JSON.stringify({
-                            response_type: "in_channel",
-                            replace_original: true,
-                            blocks,
-                        }),
+                        JSON.stringify(responseBody),
                         { status: 200, headers: { "Content-Type": "application/json" } }
                     );
                 } else if (action.action_id.startsWith("select_product_")) {
-                    // Product selection: confirm and trigger order flow (placeholder)
-                    const productIndex = JSON.parse(action.value).productIndex;
-                    // For now, just confirm selection
+                    const { productIndex } = parsedValue;
+                    const responseBody = {
+                        response_type: "in_channel",
+                        replace_original: false,
+                        text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                    };
+                    console.log("[COMMAND] Responding to select_product with:", JSON.stringify(responseBody, null, 2));
                     return new Response(
-                        JSON.stringify({
-                            response_type: "in_channel",
-                            replace_original: false,
-                            text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
-                        }),
+                        JSON.stringify(responseBody),
                         { status: 200, headers: { "Content-Type": "application/json" } }
                     );
                 }
@@ -153,32 +166,45 @@ export async function POST(request: Request) {
     // 2. Handle Slack interactivity payloads as application/json (rare, but possible)
     if (contentType.includes("application/json")) {
         const payload = await request.json();
-        console.log("[COMMAND] Interactivity payload", payload);
+        console.log("[COMMAND] Interactivity payload", JSON.stringify(payload, null, 2));
         if (payload.type === "block_actions") {
             const action = payload.actions[0];
+            let parsedValue;
+            try {
+                parsedValue = JSON.parse(action.value);
+                console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
+            } catch (err) {
+                console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
+                return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
             if (action.action_id === "next_page") {
-                const { query, page } = JSON.parse(action.value);
+                const { query, page } = parsedValue;
                 const perPage = 10;
                 const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
                 const blocks = formatProductBlocks(products, page, hasNextPage, query);
+                const responseBody = {
+                    response_type: "in_channel",
+                    replace_original: true,
+                    blocks,
+                };
+                console.log("[COMMAND] Responding to next_page with:", JSON.stringify(responseBody, null, 2));
                 return new Response(
-                    JSON.stringify({
-                        response_type: "in_channel",
-                        replace_original: true,
-                        blocks,
-                    }),
+                    JSON.stringify(responseBody),
                     { status: 200, headers: { "Content-Type": "application/json" } }
                 );
             } else if (action.action_id.startsWith("select_product_")) {
-                // Product selection: confirm and trigger order flow (placeholder)
-                const productIndex = JSON.parse(action.value).productIndex;
-                // For now, just confirm selection
+                const { productIndex } = parsedValue;
+                const responseBody = {
+                    response_type: "in_channel",
+                    replace_original: false,
+                    text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                };
+                console.log("[COMMAND] Responding to select_product with:", JSON.stringify(responseBody, null, 2));
                 return new Response(
-                    JSON.stringify({
-                        response_type: "in_channel",
-                        replace_original: false,
-                        text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
-                    }),
+                    JSON.stringify(responseBody),
                     { status: 200, headers: { "Content-Type": "application/json" } }
                 );
             }
