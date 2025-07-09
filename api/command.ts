@@ -1,4 +1,7 @@
 import { amazonSearchTool } from "../lib/tools/amazon-search.tool";
+import { generateResponse } from "../lib/generate-response";
+import { client } from "../lib/slack-utils";
+import type { CoreMessage } from "ai";
 
 export const maxDuration = 60;
 
@@ -143,20 +146,33 @@ export async function POST(request: Request) {
                 } else if (action.action_id.startsWith("select_product_")) {
                     setTimeout(async () => {
                         try {
-                            const { productIndex } = parsedValue;
+                            const { productIndex, query, page } = parsedValue;
+                            const perPage = 10;
+                            // Fetch the products for the current page
+                            const { products } = await amazonSearchTool.execute({ query, page, perPage });
+                            const product = products[productIndex];
+                            if (!product) throw new Error("Product not found for selection");
+                            // Simulate a user message with the Amazon URL
+                            const userMessage = `Buy this ${product.url}`;
+                            // Compose a fake thread for generateResponse
+                            const messages: CoreMessage[] = [
+                                { role: "user", content: userMessage }
+                            ];
+                            // Call generateResponse to trigger the order flow
+                            const result = await generateResponse(messages);
+                            // Post the result back to Slack
                             const responseBody = {
                                 response_type: "in_channel",
                                 replace_original: false,
-                                text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                                text: result,
                             };
-                            console.log("[COMMAND] (async) Responding to select_product with:", JSON.stringify(responseBody, null, 2));
                             await fetch(responseUrl, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify(responseBody),
                             });
                         } catch (err) {
-                            console.error("[COMMAND] (async) Error in select_product:", err);
+                            console.error("[COMMAND] (async) Error in select_product order flow:", err);
                         }
                     }, 0);
                     return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {

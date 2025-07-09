@@ -45,8 +45,12 @@ The current Slack bot (Snackbot) was designed to automate office snack and equip
 - [ ] Personalized recommendations (history, office, user)
 - [ ] Contextual interface improvements
 
-# Project Status Board
+## Project Status Board
 
+- [x] 1. Initial slash command returns valid Slack message with product blocks
+- [x] 2. Pagination: Only 10 products per page, robust Next/Back navigation, never more than 50 blocks
+- [x] 3. Next/Back buttons update the message in place and always show correct products
+- [ ] 4. Product selection (Select button) triggers order flow (to be implemented)
 - [x] Test and fix Amazon order submission flow
 - [x] Process pasted Amazon links for purchase
 - [ ] Integrate Amazon product search (name/description) (in progress)
