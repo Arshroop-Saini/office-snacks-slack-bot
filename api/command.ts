@@ -16,6 +16,14 @@ type Product = {
 
 function formatProductBlocks(products: Product[], page: number, hasNextPage: boolean, query: string) {
     const blocks = [];
+    // Add a header with page info
+    blocks.push({
+        type: "section",
+        text: {
+            type: "mrkdwn",
+            text: `*Amazon Results for:* \`${query}\`  |  *Page:* ${page}`,
+        },
+    });
     for (const [i, product] of products.entries()) {
         blocks.push(
             {
@@ -38,7 +46,7 @@ function formatProductBlocks(products: Product[], page: number, hasNextPage: boo
                     {
                         type: "button",
                         text: { type: "plain_text", text: "Select" },
-                        value: JSON.stringify({ productIndex: i }),
+                        value: JSON.stringify({ productIndex: i, query, page }),
                         action_id: `select_product_${i}`,
                     },
                 ],
@@ -46,17 +54,28 @@ function formatProductBlocks(products: Product[], page: number, hasNextPage: boo
             { type: "divider" }
         );
     }
+    // Pagination controls
+    const paginationElements = [];
+    if (page > 1) {
+        paginationElements.push({
+            type: "button",
+            text: { type: "plain_text", text: "Back" },
+            value: JSON.stringify({ query, page: page - 1 }),
+            action_id: "back_page",
+        });
+    }
     if (hasNextPage) {
+        paginationElements.push({
+            type: "button",
+            text: { type: "plain_text", text: "Next" },
+            value: JSON.stringify({ query, page: page + 1 }),
+            action_id: "next_page",
+        });
+    }
+    if (paginationElements.length > 0) {
         blocks.push({
             type: "actions",
-            elements: [
-                {
-                    type: "button",
-                    text: { type: "plain_text", text: "Next Page" },
-                    value: JSON.stringify({ query, page: page + 1 }),
-                    action_id: "next_page",
-                },
-            ],
+            elements: paginationElements,
         });
     }
     return blocks;
@@ -89,8 +108,7 @@ export async function POST(request: Request) {
                 }
                 // Always respond immediately to avoid Slack timeout
                 const responseUrl = payload.response_url;
-                if (action.action_id === "next_page") {
-                    // Respond immediately
+                if (action.action_id === "next_page" || action.action_id === "back_page") {
                     setTimeout(async () => {
                         try {
                             const { query, page } = parsedValue;
@@ -102,18 +120,17 @@ export async function POST(request: Request) {
                                 replace_original: true,
                                 blocks,
                             };
-                            console.log("[COMMAND] (async) Responding to next_page with:", JSON.stringify(responseBody, null, 2));
+                            console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
                             await fetch(responseUrl, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify(responseBody),
                             });
                         } catch (err) {
-                            console.error("[COMMAND] (async) Error in next_page:", err);
+                            console.error(`[COMMAND] (async) Error in ${action.action_id}:`, err);
                         }
                     }, 0);
-                    // Immediate response
-                    return new Response(JSON.stringify({ text: "Loading next page...", response_type: "ephemeral" }), {
+                    return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
                         status: 200,
                         headers: { "Content-Type": "application/json" },
                     });
@@ -207,7 +224,7 @@ export async function POST(request: Request) {
                 });
             }
             const responseUrl = payload.response_url;
-            if (action.action_id === "next_page") {
+            if (action.action_id === "next_page" || action.action_id === "back_page") {
                 setTimeout(async () => {
                     try {
                         const { query, page } = parsedValue;
@@ -219,17 +236,17 @@ export async function POST(request: Request) {
                             replace_original: true,
                             blocks,
                         };
-                        console.log("[COMMAND] (async) Responding to next_page with:", JSON.stringify(responseBody, null, 2));
+                        console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
                         await fetch(responseUrl, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify(responseBody),
                         });
                     } catch (err) {
-                        console.error("[COMMAND] (async) Error in next_page:", err);
+                        console.error(`[COMMAND] (async) Error in ${action.action_id}:`, err);
                     }
                 }, 0);
-                return new Response(JSON.stringify({ text: "Loading next page...", response_type: "ephemeral" }), {
+                return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
                     status: 200,
                     headers: { "Content-Type": "application/json" },
                 });
