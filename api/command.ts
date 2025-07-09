@@ -103,10 +103,13 @@ export async function POST(request: Request) {
             console.log("[COMMAND] Interactivity payload", JSON.stringify(payload, null, 2));
             if (payload.type === "block_actions") {
                 const action = payload.actions[0];
+                // Respond to Slack immediately to avoid timeout
+                const responseUrl = payload.response_url;
+                const actionId = action.action_id;
                 let parsedValue;
+                // Only parse the action.value minimally before responding
                 try {
                     parsedValue = JSON.parse(action.value);
-                    console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
                 } catch (err) {
                     console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
                     return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
@@ -114,60 +117,28 @@ export async function POST(request: Request) {
                         headers: { "Content-Type": "application/json" },
                     });
                 }
-                // Always respond immediately to avoid Slack timeout
-                const responseUrl = payload.response_url;
-                if (action.action_id === "next_page" || action.action_id === "back_page") {
-                    setTimeout(async () => {
-                        try {
-                            const { query, page } = parsedValue;
-                            const perPage = 10; // Always 10 per page
-                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                            const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
-                            const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
-                            const responseBody = {
-                                response_type: "in_channel",
-                                replace_original: true,
-                                blocks,
-                            };
-                            console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
-                            await fetch(responseUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
-                        } catch (err) {
-                            console.error(`[COMMAND] (async) Error in ${action.action_id}:`, err);
-                        }
-                    }, 0);
-                    return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                } else if (action.action_id.startsWith("select_product_")) {
+                // For select_product, respond immediately, then do all work async
+                if (actionId.startsWith("select_product_")) {
+                    const start = Date.now();
                     setTimeout(async () => {
                         try {
                             const { productIndex, query, page } = parsedValue;
                             const perPage = 10;
-                            // Fetch the products for the current page
                             const { products } = await amazonSearchTool.execute({ query, page, perPage });
                             const product = products[productIndex];
                             if (!product) throw new Error("Product not found for selection");
-                            // Simulate a user message with the Amazon URL
                             const userMessage = `Buy this ${product.url}`;
-                            // Compose a fake thread for generateResponse
                             const messages: CoreMessage[] = [
                                 { role: "user", content: userMessage }
                             ];
-                            // Call generateResponse to trigger the order flow
                             const result = await generateResponse(messages);
-                            // Post the result back to Slack in the same thread
                             const responseBody = {
                                 response_type: "in_channel",
                                 replace_original: false,
                                 text: result,
-                                thread_ts: payload.message?.thread_ts || payload.message?.ts // ensure reply in thread
+                                thread_ts: payload.message?.thread_ts || payload.message?.ts
                             };
-                            console.log("[COMMAND] Posting order flow result to Slack:", JSON.stringify(responseBody, null, 2));
+                            console.log(`[COMMAND] Posting order flow result to Slack after ${Date.now() - start}ms:`, JSON.stringify(responseBody, null, 2));
                             await fetch(responseUrl, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
@@ -177,6 +148,8 @@ export async function POST(request: Request) {
                             console.error("[COMMAND] (async) Error in select_product order flow:", err);
                         }
                     }, 0);
+                    // Respond immediately
+                    console.log(`[COMMAND] Responding immediately to select_product_${actionId} at ${Date.now()}`);
                     return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
                         status: 200,
                         headers: { "Content-Type": "application/json" },
