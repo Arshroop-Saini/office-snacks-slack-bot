@@ -103,7 +103,7 @@ export async function POST(request: Request) {
     const formData = await request.text();
     const params = Object.fromEntries(new URLSearchParams(formData));
 
-    if (!params.command || params.command !== "/search") {
+    if (!params.command || params.command !== "/amazon") {
         return new Response("Unknown command", { status: 400 });
     }
 
