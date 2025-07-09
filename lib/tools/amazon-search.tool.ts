@@ -15,7 +15,7 @@ export const amazonSearchTool = {
         const apiKey = process.env.SEARCH_API_KEY;
         if (!apiKey) throw new Error("SEARCH_API_KEY is not set in environment variables");
 
-        const url = `https://www.searchapi.io/api/v1/search?engine=amazon&amazon_domain=amazon.com&q=${encodeURIComponent(query)}&page=${page}&api_key=${apiKey}`;
+        const url = `https://www.searchapi.io/api/v1/search?engine=amazon_search&amazon_domain=amazon.com&q=${encodeURIComponent(query)}&page=${page}&api_key=${apiKey}`;
         const response = await fetch(url);
         const responseBody = await response.text();
         if (!response.ok) {
@@ -25,24 +25,24 @@ export const amazonSearchTool = {
         const data = JSON.parse(responseBody);
 
         // Map results to a simplified product structure
-        const products = (data.products || []).slice(0, perPage).map((product: any) => ({
+        const products = (data.organic_results || []).slice(0, perPage).map((product: any) => ({
             title: product.title,
-            url: product.url,
-            image: product.image,
-            price: product.price?.raw || product.price?.value || null,
-            currency: product.price?.currency || null,
+            url: product.link,
+            image: product.thumbnail,
+            price: product.price || null,
+            currency: null, // price is a string like "$45.44"
             rating: product.rating || null,
-            ratings_total: product.ratings_total || null,
-            eta: product.delivery_info?.estimated_delivery_date || null,
-            description: product.description || null,
+            ratings_total: product.reviews || null,
+            eta: product.fulfillment?.standard_delivery?.text || null,
+            description: product.brand || "",
         }));
 
         return {
             products,
             page,
             perPage,
-            totalResults: data.total_results || products.length,
-            hasNextPage: products.length === perPage,
+            totalResults: (data.organic_results || []).length,
+            hasNextPage: (data.organic_results || []).length === perPage,
         };
     },
 }; 
