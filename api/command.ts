@@ -14,7 +14,7 @@ type Product = {
     description?: string;
 };
 
-function formatProductBlocks(products: Product[], page: number, hasNextPage: boolean, query: string) {
+function formatProductBlocks(products: Product[], page: number, pagination: any, query: string) {
     const blocks = [];
     // Add a header with page info
     blocks.push({
@@ -56,7 +56,7 @@ function formatProductBlocks(products: Product[], page: number, hasNextPage: boo
     }
     // Pagination controls
     const paginationElements = [];
-    if (page > 1) {
+    if (pagination && pagination.previous) {
         paginationElements.push({
             type: "button",
             text: { type: "plain_text", text: "Back" },
@@ -64,7 +64,7 @@ function formatProductBlocks(products: Product[], page: number, hasNextPage: boo
             action_id: "back_page",
         });
     }
-    if (hasNextPage) {
+    if (pagination && pagination.next) {
         paginationElements.push({
             type: "button",
             text: { type: "plain_text", text: "Next" },
@@ -112,9 +112,9 @@ export async function POST(request: Request) {
                     setTimeout(async () => {
                         try {
                             const { query, page } = parsedValue;
-                            const perPage = 10;
-                            const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
-                            const blocks = formatProductBlocks(products, page, hasNextPage, query);
+                            const perPage = 20; // Show all results for the page
+                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
+                            const blocks = formatProductBlocks(products, page, apiPagination, query);
                             const responseBody = {
                                 response_type: "in_channel",
                                 replace_original: true,
@@ -177,11 +177,10 @@ export async function POST(request: Request) {
             });
         }
         try {
-            const perPage = 10;
+            const perPage = 20;
             console.log("[COMMAND] Executing Amazon search", { query });
-            const { products, page, totalResults } = await amazonSearchTool.execute({ query, page: 1, perPage });
-            const hasNextPage = (page * perPage) < totalResults;
-            console.log("[COMMAND] Amazon search results", { products, page, hasNextPage });
+            const { products, page, pagination: apiPagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
+            console.log("[COMMAND] Amazon search results", { products, page, apiPagination });
             if (!products.length) {
                 console.log("[COMMAND] No products found");
                 return new Response(JSON.stringify({ response_type: "ephemeral", text: `No products found for \"${query}\".` }), {
@@ -189,7 +188,7 @@ export async function POST(request: Request) {
                     headers: { "Content-Type": "application/json" },
                 });
             }
-            const blocks = formatProductBlocks(products, page, hasNextPage, query);
+            const blocks = formatProductBlocks(products, page, apiPagination, query);
             return new Response(
                 JSON.stringify({
                     response_type: "in_channel",
@@ -228,9 +227,9 @@ export async function POST(request: Request) {
                 setTimeout(async () => {
                     try {
                         const { query, page } = parsedValue;
-                        const perPage = 10;
-                        const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
-                        const blocks = formatProductBlocks(products, page, hasNextPage, query);
+                        const perPage = 20; // Show all results for the page
+                        const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
+                        const blocks = formatProductBlocks(products, page, apiPagination, query);
                         const responseBody = {
                             response_type: "in_channel",
                             replace_original: true,

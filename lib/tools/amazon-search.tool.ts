@@ -25,7 +25,7 @@ export const amazonSearchTool = {
         const data = JSON.parse(responseBody);
 
         // Map results to a simplified product structure
-        const products = (data.organic_results || []).slice(0, perPage).map((product: any) => ({
+        const products = (data.organic_results || []).map((product: any) => ({
             title: product.title,
             url: product.link,
             image: product.thumbnail,
@@ -42,7 +42,7 @@ export const amazonSearchTool = {
             page,
             perPage,
             totalResults: (data.organic_results || []).length,
-            hasNextPage: (data.organic_results || []).length === perPage,
+            pagination: data.pagination || {},
         };
     },
 }; 
