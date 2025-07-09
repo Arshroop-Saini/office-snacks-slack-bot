@@ -193,12 +193,16 @@ export async function POST(request: Request) {
             }
             // Only return Slack-allowed fields in the slash command response
             const blocks = formatProductBlocks(products, page, apiPagination, query);
+            const responseBody: any = {
+                response_type: "in_channel",
+                text: `Amazon search results for "${query}":`,
+            };
+            if (blocks && blocks.length > 0) {
+                responseBody.blocks = blocks;
+            }
+            console.log("[COMMAND] Slash command response body:", JSON.stringify(responseBody));
             return new Response(
-                JSON.stringify({
-                    response_type: "in_channel",
-                    text: `Amazon search results for "${query}":`,
-                    blocks: blocks && blocks.length ? blocks : undefined
-                }),
+                JSON.stringify(responseBody),
                 { status: 200, headers: { "Content-Type": "application/json" } }
             );
         } catch (err) {
