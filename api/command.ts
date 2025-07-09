@@ -87,33 +87,59 @@ export async function POST(request: Request) {
                         headers: { "Content-Type": "application/json" },
                     });
                 }
+                // Always respond immediately to avoid Slack timeout
+                const responseUrl = payload.response_url;
                 if (action.action_id === "next_page") {
-                    const { query, page } = parsedValue;
-                    const perPage = 10;
-                    const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
-                    const blocks = formatProductBlocks(products, page, hasNextPage, query);
-                    const responseBody = {
-                        response_type: "in_channel",
-                        replace_original: true,
-                        blocks,
-                    };
-                    console.log("[COMMAND] Responding to next_page with:", JSON.stringify(responseBody, null, 2));
-                    return new Response(
-                        JSON.stringify(responseBody),
-                        { status: 200, headers: { "Content-Type": "application/json" } }
-                    );
+                    // Respond immediately
+                    setTimeout(async () => {
+                        try {
+                            const { query, page } = parsedValue;
+                            const perPage = 10;
+                            const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
+                            const blocks = formatProductBlocks(products, page, hasNextPage, query);
+                            const responseBody = {
+                                response_type: "in_channel",
+                                replace_original: true,
+                                blocks,
+                            };
+                            console.log("[COMMAND] (async) Responding to next_page with:", JSON.stringify(responseBody, null, 2));
+                            await fetch(responseUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(responseBody),
+                            });
+                        } catch (err) {
+                            console.error("[COMMAND] (async) Error in next_page:", err);
+                        }
+                    }, 0);
+                    // Immediate response
+                    return new Response(JSON.stringify({ text: "Loading next page...", response_type: "ephemeral" }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
                 } else if (action.action_id.startsWith("select_product_")) {
-                    const { productIndex } = parsedValue;
-                    const responseBody = {
-                        response_type: "in_channel",
-                        replace_original: false,
-                        text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
-                    };
-                    console.log("[COMMAND] Responding to select_product with:", JSON.stringify(responseBody, null, 2));
-                    return new Response(
-                        JSON.stringify(responseBody),
-                        { status: 200, headers: { "Content-Type": "application/json" } }
-                    );
+                    setTimeout(async () => {
+                        try {
+                            const { productIndex } = parsedValue;
+                            const responseBody = {
+                                response_type: "in_channel",
+                                replace_original: false,
+                                text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                            };
+                            console.log("[COMMAND] (async) Responding to select_product with:", JSON.stringify(responseBody, null, 2));
+                            await fetch(responseUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(responseBody),
+                            });
+                        } catch (err) {
+                            console.error("[COMMAND] (async) Error in select_product:", err);
+                        }
+                    }, 0);
+                    return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
                 }
             }
             return new Response("", { status: 200 });
@@ -180,33 +206,56 @@ export async function POST(request: Request) {
                     headers: { "Content-Type": "application/json" },
                 });
             }
+            const responseUrl = payload.response_url;
             if (action.action_id === "next_page") {
-                const { query, page } = parsedValue;
-                const perPage = 10;
-                const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
-                const blocks = formatProductBlocks(products, page, hasNextPage, query);
-                const responseBody = {
-                    response_type: "in_channel",
-                    replace_original: true,
-                    blocks,
-                };
-                console.log("[COMMAND] Responding to next_page with:", JSON.stringify(responseBody, null, 2));
-                return new Response(
-                    JSON.stringify(responseBody),
-                    { status: 200, headers: { "Content-Type": "application/json" } }
-                );
+                setTimeout(async () => {
+                    try {
+                        const { query, page } = parsedValue;
+                        const perPage = 10;
+                        const { products, hasNextPage } = await amazonSearchTool.execute({ query, page, perPage });
+                        const blocks = formatProductBlocks(products, page, hasNextPage, query);
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: true,
+                            blocks,
+                        };
+                        console.log("[COMMAND] (async) Responding to next_page with:", JSON.stringify(responseBody, null, 2));
+                        await fetch(responseUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error("[COMMAND] (async) Error in next_page:", err);
+                    }
+                }, 0);
+                return new Response(JSON.stringify({ text: "Loading next page...", response_type: "ephemeral" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
             } else if (action.action_id.startsWith("select_product_")) {
-                const { productIndex } = parsedValue;
-                const responseBody = {
-                    response_type: "in_channel",
-                    replace_original: false,
-                    text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
-                };
-                console.log("[COMMAND] Responding to select_product with:", JSON.stringify(responseBody, null, 2));
-                return new Response(
-                    JSON.stringify(responseBody),
-                    { status: 200, headers: { "Content-Type": "application/json" } }
-                );
+                setTimeout(async () => {
+                    try {
+                        const { productIndex } = parsedValue;
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: false,
+                            text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                        };
+                        console.log("[COMMAND] (async) Responding to select_product with:", JSON.stringify(responseBody, null, 2));
+                        await fetch(responseUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error("[COMMAND] (async) Error in select_product:", err);
+                    }
+                }, 0);
+                return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
             }
         }
         return new Response("", { status: 200 });
