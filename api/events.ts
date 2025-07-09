@@ -44,26 +44,15 @@ export async function POST(request: Request) {
       waitUntil(assistantThreadMessage(event));
     }
 
-    // Allow the bot to process any message that mentions it with the buy command, even if sent by the bot
     if (
       event.type === "message" &&
       !event.subtype &&
-      event.text &&
-      event.text.includes(`<@${botUserId}>`) &&
-      /buy this https?:\/\//i.test(event.text)
+      ["im", "channel"].includes(event.channel_type) &&
+      !event.bot_id &&
+      !event.bot_profile &&
+      event.bot_id !== botUserId
     ) {
-      console.log('[EVENTS] Triggering order flow for message:', event.text, 'from user:', event.user, 'bot_id:', event.bot_id, 'bot_profile:', event.bot_profile);
       waitUntil(handleNewAssistantMessage(event, botUserId));
-    }
-
-    // Fallback: If Slack sends an app_mention event for the bot's own message, handle it too
-    if (
-      event.type === "app_mention" &&
-      event.text &&
-      /buy this https?:\/\//i.test(event.text)
-    ) {
-      console.log('[EVENTS] Triggering order flow for app_mention:', event.text, 'from user:', event.user, 'bot_id:', event.bot_id, 'bot_profile:', event.bot_profile);
-      waitUntil(handleNewAppMention(event, botUserId));
     }
 
     return new Response("Success!", { status: 200 });

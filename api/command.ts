@@ -1,6 +1,6 @@
 import { amazonSearchTool } from "../lib/tools/amazon-search.tool";
 import { generateResponse } from "../lib/generate-response";
-import { client, getBotId } from "../lib/slack-utils";
+import { client } from "../lib/slack-utils";
 import type { CoreMessage } from "ai";
 
 export const maxDuration = 60;
@@ -61,6 +61,12 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
                     value: JSON.stringify({ productIndex: i, query, page }),
                     action_id: `select_product_${i}`,
                 },
+                {
+                    type: "button",
+                    text: { type: "plain_text", text: "Copy Link" },
+                    value: JSON.stringify({ productIndex: i, query, page }),
+                    action_id: `copy_link_${i}`,
+                },
             ],
         });
         blocks.push({ type: "divider" });
@@ -103,13 +109,10 @@ export async function POST(request: Request) {
             console.log("[COMMAND] Interactivity payload", JSON.stringify(payload, null, 2));
             if (payload.type === "block_actions") {
                 const action = payload.actions[0];
-                // Respond to Slack immediately to avoid timeout
-                const responseUrl = payload.response_url;
-                const actionId = action.action_id;
                 let parsedValue;
-                // Only parse the action.value minimally before responding
                 try {
                     parsedValue = JSON.parse(action.value);
+                    console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
                 } catch (err) {
                     console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
                     return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
@@ -117,43 +120,97 @@ export async function POST(request: Request) {
                         headers: { "Content-Type": "application/json" },
                     });
                 }
-                // For select_product, respond immediately, then do all work async
-                if (actionId.startsWith("select_product_")) {
-                    const start = Date.now();
+                // Always respond immediately to avoid Slack timeout
+                const responseUrl = payload.response_url;
+                if (action.action_id === "next_page" || action.action_id === "back_page") {
+                    setTimeout(async () => {
+                        try {
+                            const { query, page } = parsedValue;
+                            const perPage = 10; // Always 10 per page
+                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
+                            const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
+                            const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
+                            const responseBody = {
+                                response_type: "in_channel",
+                                replace_original: true,
+                                blocks,
+                            };
+                            console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
+                            await fetch(responseUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(responseBody),
+                            });
+                        } catch (err) {
+                            console.error(`[COMMAND] (async) Error in ${action.action_id}:`, err);
+                        }
+                    }, 0);
+                    return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
+                // Handle Copy Link button
+                if (action.action_id.startsWith("copy_link_")) {
                     setTimeout(async () => {
                         try {
                             const { productIndex, query, page } = parsedValue;
                             const perPage = 10;
+                            // Fetch the products for the current page
                             const { products } = await amazonSearchTool.execute({ query, page, perPage });
                             const product = products[productIndex];
-                            if (!product) throw new Error("Product not found for selection");
-                            // Compose a message tagging the bot with the Amazon link and indicating the user
-                            let botUserId = process.env.SLACK_BOT_USER_ID;
-                            if (!botUserId) {
-                                botUserId = await getBotId();
-                            }
-                            const botMention = `<@${botUserId}>`;
-                            const userMention = payload.user?.id ? `<@${payload.user.id}>` : "(unknown user)";
-                            const userMessage = `${botMention} buy this ${product.url}\n_Requested by ${userMention}_`;
-                            // Post the message as a new message in the channel (not a thread)
-                            const channel = payload.channel?.id || payload.channel_id || payload.container?.channel_id;
-                            if (!channel) throw new Error("Channel not found in payload");
-                            await client.chat.postMessage({
-                                channel,
-                                text: userMessage,
-                            });
-                            // Optionally, post an ephemeral confirmation to the user
+                            if (!product) throw new Error("Product not found for copy link");
+                            // Respond ephemerally with the product URL
+                            const responseBody = {
+                                response_type: "ephemeral",
+                                text: `Here is the link: <${product.url}|${product.title}>`,
+                            };
                             await fetch(responseUrl, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ text: `Sent: ${userMessage}`, response_type: "ephemeral" }),
+                                body: JSON.stringify(responseBody),
+                            });
+                        } catch (err) {
+                            console.error("[COMMAND] (async) Error in copy_link action:", err);
+                        }
+                    }, 0);
+                    return new Response(JSON.stringify({ text: "Copied link!", response_type: "ephemeral" }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
+                else if (action.action_id.startsWith("select_product_")) {
+                    setTimeout(async () => {
+                        try {
+                            const { productIndex, query, page } = parsedValue;
+                            const perPage = 10;
+                            // Fetch the products for the current page
+                            const { products } = await amazonSearchTool.execute({ query, page, perPage });
+                            const product = products[productIndex];
+                            if (!product) throw new Error("Product not found for selection");
+                            // Simulate a user message with the Amazon URL
+                            const userMessage = `Buy this ${product.url}`;
+                            // Compose a fake thread for generateResponse
+                            const messages: CoreMessage[] = [
+                                { role: "user", content: userMessage }
+                            ];
+                            // Call generateResponse to trigger the order flow
+                            const result = await generateResponse(messages);
+                            // Post the result back to Slack
+                            const responseBody = {
+                                response_type: "in_channel",
+                                replace_original: false,
+                                text: result,
+                            };
+                            await fetch(responseUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(responseBody),
                             });
                         } catch (err) {
                             console.error("[COMMAND] (async) Error in select_product order flow:", err);
                         }
                     }, 0);
-                    // Respond immediately
-                    console.log(`[COMMAND] Responding immediately to select_product_${actionId} at ${Date.now()}`);
                     return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
                         status: 200,
                         headers: { "Content-Type": "application/json" },
