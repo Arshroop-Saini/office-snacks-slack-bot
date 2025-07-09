@@ -127,22 +127,23 @@ export async function POST(request: Request) {
                             const { products } = await amazonSearchTool.execute({ query, page, perPage });
                             const product = products[productIndex];
                             if (!product) throw new Error("Product not found for selection");
-                            const userMessage = `Buy this ${product.url}`;
-                            const messages: CoreMessage[] = [
-                                { role: "user", content: userMessage }
-                            ];
-                            const result = await generateResponse(messages);
-                            const responseBody = {
-                                response_type: "in_channel",
-                                replace_original: false,
-                                text: result,
-                                thread_ts: payload.message?.thread_ts || payload.message?.ts
-                            };
-                            console.log(`[COMMAND] Posting order flow result to Slack after ${Date.now() - start}ms:`, JSON.stringify(responseBody, null, 2));
+                            // Compose a message tagging the bot with the Amazon link
+                            const botMention = `<@${process.env.SLACK_BOT_USER_ID || 'BOT_USER_ID'}>`;
+                            const userMessage = `${botMention} buy this ${product.url}`;
+                            // Post the message to the same channel/thread as the original message
+                            const channel = payload.channel?.id || payload.channel_id || payload.container?.channel_id;
+                            const thread_ts = payload.message?.thread_ts || payload.message?.ts;
+                            if (!channel) throw new Error("Channel not found in payload");
+                            await client.chat.postMessage({
+                                channel,
+                                text: userMessage,
+                                thread_ts,
+                            });
+                            // Optionally, post an ephemeral confirmation to the user
                             await fetch(responseUrl, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
+                                body: JSON.stringify({ text: `Sent: ${userMessage}`, response_type: "ephemeral" }),
                             });
                         } catch (err) {
                             console.error("[COMMAND] (async) Error in select_product order flow:", err);
