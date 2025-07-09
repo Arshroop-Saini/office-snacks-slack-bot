@@ -177,33 +177,39 @@ export async function POST(request: Request) {
             });
         }
         try {
-            const perPage = 20;
+            const perPage = 10; // Show 10 products per page for Slack
             console.log("[COMMAND] Executing Amazon search", { query });
             const { products, page, pagination: apiPagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
             console.log("[COMMAND] Amazon search results", { productsCount: products.length, page, apiPagination });
             if (!products.length) {
                 console.log("[COMMAND] No products found");
-                return new Response(JSON.stringify({ response_type: "ephemeral", text: `No products found for \"${query}\".` }), {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                });
+                return new Response(
+                    JSON.stringify({
+                        response_type: "ephemeral",
+                        text: `No products found for "${query}".`
+                    }),
+                    { status: 200, headers: { "Content-Type": "application/json" } }
+                );
             }
             // Only return Slack-allowed fields in the slash command response
-            const blocks = formatProductBlocks(products, page, apiPagination, query);
+            const blocks = formatProductBlocks(products.slice(0, perPage), page, apiPagination, query);
             return new Response(
                 JSON.stringify({
                     response_type: "in_channel",
-                    text: `Amazon search results for \"${query}\":`,
-                    blocks,
+                    text: `Amazon search results for "${query}":`,
+                    blocks: blocks && blocks.length ? blocks : undefined
                 }),
                 { status: 200, headers: { "Content-Type": "application/json" } }
             );
-        } catch (err: any) {
+        } catch (err) {
             console.error("[COMMAND] Error in Amazon search", err);
-            return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: ${err.message}` }), {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-            });
+            return new Response(
+                JSON.stringify({
+                    response_type: "ephemeral",
+                    text: "Sorry, there was an error searching Amazon. Please try again later."
+                }),
+                { status: 200, headers: { "Content-Type": "application/json" } }
+            );
         }
     }
 
