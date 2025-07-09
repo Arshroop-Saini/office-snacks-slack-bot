@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { openai } from "@ai-sdk/openai";
 import { getOnChainTools } from "@goat-sdk/adapter-vercel-ai";
 import { solana } from "@goat-sdk/wallet-solana";
 import { type CoreMessage, generateText } from "ai";
@@ -42,7 +42,7 @@ export const generateResponse = async (
   console.log("🛠️ Available tools:", Object.keys(tools));
 
   const generateTextResponse = await generateText({
-    model: anthropic("claude-3-7-sonnet-20250219"),
+    model: openai("gpt-4"),
     messages,
     tools,
     maxSteps: 10,
