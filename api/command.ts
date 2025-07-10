@@ -135,10 +135,8 @@ export async function POST(request: Request) {
                             const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
                             console.log('[DEBUG] apiPagination:', JSON.stringify(apiPagination, null, 2));
                             let totalPages = 1;
-                            if (apiPagination && apiPagination.total_results && perPage) {
-                                totalPages = Math.ceil(apiPagination.total_results / perPage);
-                            } else if (apiPagination && apiPagination.total_pages) {
-                                totalPages = apiPagination.total_pages;
+                            if (apiPagination && apiPagination.other_pages) {
+                                totalPages = 1 + Object.keys(apiPagination.other_pages).length;
                             }
                             const { pageProducts } = paginateProducts(products, page, perPage, apiPagination?.total_results);
                             const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
@@ -223,10 +221,8 @@ export async function POST(request: Request) {
             console.log('[DEBUG] apiPagination:', JSON.stringify(apiPagination, null, 2));
             // Use total_results or total_pages from apiPagination if available
             let totalPages = 1;
-            if (apiPagination && apiPagination.total_results && perPage) {
-                totalPages = Math.ceil(apiPagination.total_results / perPage);
-            } else if (apiPagination && apiPagination.total_pages) {
-                totalPages = apiPagination.total_pages;
+            if (apiPagination && apiPagination.other_pages) {
+                totalPages = 1 + Object.keys(apiPagination.other_pages).length;
             }
             if (!products.length) {
                 console.log("[COMMAND] No products found");
