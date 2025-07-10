@@ -296,7 +296,19 @@ export async function POST(request: Request) {
                 action.action_id === "select_office_ba" ||
                 action.action_id === "select_office_madrid"
             ) {
-                const selectedOffice = action.value;
+                // Log the payload for debugging
+                console.log("[COMMAND] Office selection button payload:", JSON.stringify(payload, null, 2));
+                let selectedOffice;
+                try {
+                    // Try to parse as JSON, fallback to string
+                    selectedOffice = typeof action.value === 'string' ? action.value : JSON.stringify(action.value);
+                    if (selectedOffice && selectedOffice[0] === '{') {
+                        selectedOffice = JSON.parse(selectedOffice);
+                        if (selectedOffice.office) selectedOffice = selectedOffice.office;
+                    }
+                } catch (e) {
+                    selectedOffice = action.value;
+                }
                 await fetch(payload.response_url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -304,7 +316,6 @@ export async function POST(request: Request) {
                         response_type: "in_channel",
                         replace_original: true,
                         text: `You selected *${selectedOffice}* as your office. Continuing your order...`
-                        // Optionally, trigger the next step in your order flow here
                     }),
                 });
                 return new Response("", { status: 200 });
