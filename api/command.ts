@@ -122,15 +122,20 @@ export async function POST(request: Request) {
             if (payload.type === "block_actions") {
                 const action = payload.actions[0];
                 let parsedValue;
-                try {
-                    parsedValue = JSON.parse(action.value);
-                    console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
-                } catch (err) {
-                    console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
-                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
+                if (typeof action.value === "string" && (action.value.trim().startsWith("{") || action.value.trim().startsWith("["))) {
+                    try {
+                        parsedValue = JSON.parse(action.value);
+                        console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
+                    } catch (err) {
+                        console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
+                        return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+                            status: 200,
+                            headers: { "Content-Type": "application/json" },
+                        });
+                    }
+                } else {
+                    parsedValue = action.value;
+                    console.log(`[COMMAND] Using action.value as string for ${action.action_id}:`, parsedValue);
                 }
                 // Show instant loading indicator with disabled buttons
                 const { query, page } = parsedValue;
@@ -228,15 +233,20 @@ export async function POST(request: Request) {
         if (payload.type === "block_actions") {
             const action = payload.actions[0];
             let parsedValue;
-            try {
-                parsedValue = JSON.parse(action.value);
-                console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
-            } catch (err) {
-                console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
-                return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                });
+            if (typeof action.value === "string" && (action.value.trim().startsWith("{") || action.value.trim().startsWith("["))) {
+                try {
+                    parsedValue = JSON.parse(action.value);
+                    console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
+                } catch (err) {
+                    console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
+                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
+            } else {
+                parsedValue = action.value;
+                console.log(`[COMMAND] Using action.value as string for ${action.action_id}:`, parsedValue);
             }
             const responseUrl = payload.response_url;
             if (action.action_id === "next_page" || action.action_id === "back_page") {
