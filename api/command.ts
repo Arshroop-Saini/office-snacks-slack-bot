@@ -161,4 +161,64 @@ export async function POST(request: Request) {
                     await fetch(payload.response_url, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ response_type: "ephemeral", text: `:warning: Failed to load page. Please try again.`
+                        body: JSON.stringify({ response_type: "ephemeral", text: `:warning: Failed to load page. Please try again.` })
+                    });
+                }
+                return new Response("", { status: 200 });
+            }
+            return new Response("", { status: 200 });
+        }
+        // Otherwise, treat as a slash command
+        console.log("[COMMAND] Raw form data", formData);
+        console.log("[COMMAND] Parsed params", params);
+        if (!params.command || params.command !== "/amazon") {
+            console.log("[COMMAND] Unknown command", params.command);
+            return new Response("Unknown command", { status: 400 });
+        }
+        const query = params.text?.trim();
+        if (!query) {
+            console.log("[COMMAND] No query provided");
+            return new Response(JSON.stringify({ response_type: "ephemeral", text: "Please provide a search query." }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        try {
+            const perPage = 10;
+            const page = 1;
+            const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
+            if (!products.length) {
+                console.log("[COMMAND] No products found");
+                return new Response(
+                    JSON.stringify({
+                        response_type: "ephemeral",
+                        text: `No products found for \"${query}\".`
+                    }),
+                    { status: 200, headers: { "Content-Type": "application/json" } }
+                );
+            }
+            const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+            const blocks = formatProductBlocksStateless(products, page, totalPages, query);
+            const responseBody = {
+                response_type: "in_channel",
+                text: `Amazon search results for \"${query}\":`,
+                blocks,
+            };
+            console.log("[COMMAND] Slash command response body:", JSON.stringify(responseBody));
+            return new Response(
+                JSON.stringify(responseBody),
+                { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+        } catch (err) {
+            console.error("[COMMAND] Error in Amazon search", err);
+            return new Response(
+                JSON.stringify({
+                    response_type: "ephemeral",
+                    text: "Sorry, there was an error searching Amazon. Please try again later."
+                }),
+                { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+        }
+    }
+    return new Response("Unsupported content type", { status: 400 });
+}
