@@ -68,18 +68,26 @@ export async function handleNewAppMention(
     let userTz: string | null = null;
     let userTzLabel: string | null = null;
     let office: string | undefined = undefined;
+    let messages: any[] = [];
     if (user) {
       const profile = await getUserProfile(user);
       console.log("[DEBUG] AppMention user profile:", profile);
       userEmail = profile.email || undefined;
       userTz = profile.tz;
       userTzLabel = profile.tz_label;
+      // Fetch thread messages for context
+      messages = await getThread(channel, rootTs, botUserId);
       const offices = getOfficeForTimezone(userTz, userTzLabel);
       console.log("[DEBUG] Office candidates:", offices);
       if (offices.length === 1) {
         office = offices[0];
       } else if (offices.length > 1) {
         // Ambiguous: prompt user to choose
+        const context = {
+          query: messages && messages.length > 0 ? messages[messages.length - 1].content : undefined,
+          user,
+          thread_ts: rootTs,
+        };
         await client.chat.postMessage({
           channel,
           thread_ts: rootTs,
@@ -98,13 +106,13 @@ export async function handleNewAppMention(
                 {
                   type: "button",
                   text: { type: "plain_text", text: "New York City" },
-                  value: "New York City",
+                  value: JSON.stringify({ ...context, office: "New York City" }),
                   action_id: "select_office_nyc"
                 },
                 {
                   type: "button",
                   text: { type: "plain_text", text: "Miami" },
-                  value: "Miami",
+                  value: JSON.stringify({ ...context, office: "Miami" }),
                   action_id: "select_office_miami"
                 }
               ]
@@ -114,6 +122,11 @@ export async function handleNewAppMention(
         return;
       } else {
         // No match: prompt user to choose from all offices
+        const context = {
+          query: messages && messages.length > 0 ? messages[messages.length - 1].content : undefined,
+          user,
+          thread_ts: rootTs,
+        };
         await client.chat.postMessage({
           channel,
           thread_ts: rootTs,
@@ -132,25 +145,25 @@ export async function handleNewAppMention(
                 {
                   type: "button",
                   text: { type: "plain_text", text: "New York City" },
-                  value: "New York City",
+                  value: JSON.stringify({ ...context, office: "New York City" }),
                   action_id: "select_office_nyc"
                 },
                 {
                   type: "button",
                   text: { type: "plain_text", text: "Miami" },
-                  value: "Miami",
+                  value: JSON.stringify({ ...context, office: "Miami" }),
                   action_id: "select_office_miami"
                 },
                 {
                   type: "button",
                   text: { type: "plain_text", text: "Buenos Aires" },
-                  value: "Buenos Aires",
+                  value: JSON.stringify({ ...context, office: "Buenos Aires" }),
                   action_id: "select_office_ba"
                 },
                 {
                   type: "button",
                   text: { type: "plain_text", text: "Madrid" },
-                  value: "Madrid",
+                  value: JSON.stringify({ ...context, office: "Madrid" }),
                   action_id: "select_office_madrid"
                 }
               ]
@@ -165,8 +178,7 @@ export async function handleNewAppMention(
     const safeChannel = channel || "";
     const safeThreadTs = rootTs;
 
-    const messages = await getThread(safeChannel, safeThreadTs, botUserId);
-    let result = await generateResponse(messages, updateMessage, userEmail ?? undefined);
+    const result = await generateResponse(messages, updateMessage, userEmail ?? undefined);
     console.log("Generated response for app mention:", result);
 
     await client.chat.postMessage({

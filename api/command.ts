@@ -308,24 +308,45 @@ export async function POST(request: Request) {
             ) {
                 // Log the payload for debugging
                 console.log("[COMMAND] Office selection button payload:", JSON.stringify(payload, null, 2));
-                let selectedOffice;
-                try {
-                    // Try to parse as JSON, fallback to string
-                    selectedOffice = typeof action.value === 'string' ? action.value : JSON.stringify(action.value);
-                    if (selectedOffice && selectedOffice[0] === '{') {
-                        selectedOffice = JSON.parse(selectedOffice);
-                        if (selectedOffice.office) selectedOffice = selectedOffice.office;
-                    }
-                } catch (e) {
-                    selectedOffice = action.value;
+                let parsedValue;
+                if (typeof action.value === "string" && (action.value.trim().startsWith("{") || action.value.trim().startsWith("["))) {
+                    parsedValue = JSON.parse(action.value);
+                } else {
+                    parsedValue = { office: action.value };
                 }
+                const { office, query, user, thread_ts } = parsedValue;
+                // Fetch user email
+                let userEmail = null;
+                if (user) {
+                    try {
+                        const { email } = await import("../lib/slack-utils").then(m => m.getUserProfile(user));
+                        userEmail = email;
+                    } catch (e) {
+                        console.error("[COMMAND] Failed to fetch user email for office selection:", e);
+                    }
+                }
+                // Compose messages for generateResponse
+                const messages = [
+                    { role: "user", content: String(query || "") },
+                    { role: "user", content: `My office location is ${office}` }
+                ] as import("ai").CoreMessage[];
+                // Call generateResponse
+                const { generateResponse } = await import("../lib/generate-response");
+                const result = await generateResponse(messages, undefined, userEmail ?? undefined);
+                // Post the result to the thread
                 await fetch(payload.response_url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         response_type: "in_channel",
                         replace_original: true,
-                        text: `You selected *${selectedOffice}* as your office. Continuing your order...`
+                        text: result,
+                        blocks: [
+                            {
+                                type: "section",
+                                text: { type: "mrkdwn", text: result },
+                            },
+                        ],
                     }),
                 });
                 return new Response("", { status: 200 });
