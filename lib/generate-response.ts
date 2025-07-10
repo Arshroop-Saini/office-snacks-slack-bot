@@ -42,9 +42,18 @@ export const generateResponse = async (
   // list all the available tool names
   console.log("🛠️ Available tools:", Object.keys(tools));
 
+  // Inject the user's email as a message if available
+  let messagesWithEmail = messages;
+  if (userEmail) {
+    messagesWithEmail = [
+      ...messages,
+      { role: "user", content: `My email address is ${userEmail}` }
+    ];
+  }
+
   const generateTextResponse = await generateText({
     model: openai("gpt-4"),
-    messages,
+    messages: messagesWithEmail,
     tools,
     maxSteps: 10,
     system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail),
