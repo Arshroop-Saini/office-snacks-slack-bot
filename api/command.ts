@@ -3,10 +3,6 @@ import { generateResponse } from "../lib/generate-response";
 import { client } from "../lib/slack-utils";
 import type { CoreMessage } from "ai";
 
-export const maxDuration = 60;
-
-const MAX_PRODUCTS = 50; // Slack payload safety
-
 type Product = {
     title: string;
     url: string;
@@ -18,6 +14,23 @@ type Product = {
     eta?: string;
     description?: string;
 };
+
+export const maxDuration = 60;
+
+const MAX_PRODUCTS = 20; // Reduce for Slack payload safety
+
+// Only cache minimal fields for context
+function minimalProduct(product: Product) {
+    return {
+        title: product.title,
+        url: product.url,
+        image: product.image,
+        price: product.price,
+        rating: product.rating,
+        ratings_total: product.ratings_total,
+        eta: product.eta,
+    };
+}
 
 // Helper to paginate products
 function paginateProducts(products: Product[], page: number, perPage: number) {
@@ -85,13 +98,24 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
         blocks.push({ type: "actions", elements });
     }
     // Store all products in a hidden context block (base64-encoded JSON for safety)
-    const productsJson = Buffer.from(JSON.stringify(allProducts)).toString('base64');
-    blocks.push({
-        type: "context",
-        elements: [
-            { type: "plain_text", text: `__PRODUCTS__${productsJson}` }
-        ]
-    });
+    const minimalProducts = allProducts.map(minimalProduct);
+    const productsJson = Buffer.from(JSON.stringify(minimalProducts)).toString('base64');
+    console.log(`[DEBUG] Context block base64 length: ${productsJson.length}`);
+    if (productsJson.length > 2500) {
+        blocks.push({
+            type: "context",
+            elements: [
+                { type: "plain_text", text: `:warning: Too many products to cache for pagination. Please refine your search.` }
+            ]
+        });
+    } else {
+        blocks.push({
+            type: "context",
+            elements: [
+                { type: "plain_text", text: `__PRODUCTS__${productsJson}` }
+            ]
+        });
+    }
     return blocks;
 }
 
@@ -123,6 +147,7 @@ export async function POST(request: Request) {
                 // Find the context block with the products
                 const contextBlock = payload.message.blocks.find((b: any) => b.type === "context" && b.elements && b.elements[0].text.startsWith("__PRODUCTS__"));
                 if (!contextBlock) {
+                    console.error("[ERROR] Product context block missing in payload");
                     return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Product data missing.` }), {
                         status: 200,
                         headers: { "Content-Type": "application/json" },
@@ -131,8 +156,11 @@ export async function POST(request: Request) {
                 const productsJson = contextBlock.elements[0].text.replace("__PRODUCTS__", "");
                 let allProducts: Product[] = [];
                 try {
-                    allProducts = JSON.parse(Buffer.from(productsJson, 'base64').toString('utf-8'));
+                    const decoded = Buffer.from(productsJson, 'base64').toString('utf-8');
+                    console.log(`[DEBUG] Decoded context block length: ${decoded.length}`);
+                    allProducts = JSON.parse(decoded);
                 } catch (err) {
+                    console.error("[ERROR] Failed to decode or parse product context block", err);
                     return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Failed to decode product data.` }), {
                         status: 200,
                         headers: { "Content-Type": "application/json" },
