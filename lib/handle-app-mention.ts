@@ -82,7 +82,7 @@ export async function handleNewAppMention(
         // Ambiguous: prompt user to choose
         await client.chat.postMessage({
           channel,
-          thread_ts,
+          thread_ts: rootTs,
           text: `We have offices in both New York City and Miami for your timezone. Which one would you like to use for your order?`,
           blocks: [
             {
@@ -106,6 +106,52 @@ export async function handleNewAppMention(
                   text: { type: "plain_text", text: "Miami" },
                   value: "Miami",
                   action_id: "select_office_miami"
+                }
+              ]
+            }
+          ]
+        });
+        return;
+      } else {
+        // No match: prompt user to choose from all offices
+        await client.chat.postMessage({
+          channel,
+          thread_ts: rootTs,
+          text: `We couldn't detect your office location from your timezone. Please choose your office for delivery:`,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `We couldn't detect your office location from your timezone. Please choose your office for delivery:`,
+              },
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "New York City" },
+                  value: "New York City",
+                  action_id: "select_office_nyc"
+                },
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Miami" },
+                  value: "Miami",
+                  action_id: "select_office_miami"
+                },
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Buenos Aires" },
+                  value: "Buenos Aires",
+                  action_id: "select_office_ba"
+                },
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Madrid" },
+                  value: "Madrid",
+                  action_id: "select_office_madrid"
                 }
               ]
             }
