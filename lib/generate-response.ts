@@ -52,7 +52,7 @@ export const generateResponse = async (
   }
 
   const generateTextResponse = await generateText({
-    model: openai("gpt-4"),
+    model: openai("gpt-4o"),
     messages: messagesWithEmail,
     tools,
     maxSteps: 10,
