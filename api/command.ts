@@ -5,6 +5,8 @@ import type { CoreMessage } from "ai";
 
 export const maxDuration = 60;
 
+const MAX_PRODUCTS = 50; // Slack payload safety
+
 type Product = {
     title: string;
     url: string;
@@ -18,18 +20,17 @@ type Product = {
 };
 
 // Helper to paginate products
-function paginateProducts(products: Product[], page: number, perPage: number, totalResults?: number) {
-    // Use totalResults if available, otherwise fallback to products.length
-    const totalPages = totalResults ? Math.ceil(totalResults / perPage) : Math.ceil(products.length / perPage);
+function paginateProducts(products: Product[], page: number, perPage: number) {
+    const totalPages = Math.ceil(products.length / perPage);
     const start = (page - 1) * perPage;
     const end = start + perPage;
     return {
-        pageProducts: products.slice(0, perPage), // always use the current page's products
+        pageProducts: products.slice(start, end),
         totalPages,
     };
 }
 
-function formatProductBlocks(products: Product[], page: number, totalPages: number, query: string) {
+function formatProductBlocks(products: Product[], page: number, totalPages: number, query: string, allProducts: Product[]) {
     const blocks = [];
     // Header
     blocks.push({
@@ -64,27 +65,33 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
     }
     // Pagination controls
     const elements = [];
-    // Only show Back if not on first page
     if (page > 1) {
         elements.push({
             type: "button",
             text: { type: "plain_text", text: "Back" },
-            value: JSON.stringify({ query, page: page - 1 }),
+            value: JSON.stringify({ page: page - 1 }),
             action_id: "back_page",
         });
     }
-    // Only show Next if not on last page
     if (page < totalPages) {
         elements.push({
             type: "button",
             text: { type: "plain_text", text: "Next" },
-            value: JSON.stringify({ query, page: page + 1 }),
+            value: JSON.stringify({ page: page + 1 }),
             action_id: "next_page",
         });
     }
     if (elements.length > 0) {
         blocks.push({ type: "actions", elements });
     }
+    // Store all products in a hidden context block (base64-encoded JSON for safety)
+    const productsJson = Buffer.from(JSON.stringify(allProducts)).toString('base64');
+    blocks.push({
+        type: "context",
+        elements: [
+            { type: "plain_text", text: `__PRODUCTS__${productsJson}` }
+        ]
+    });
     return blocks;
 }
 
@@ -113,97 +120,40 @@ export async function POST(request: Request) {
                         headers: { "Content-Type": "application/json" },
                     });
                 }
-                // Always respond immediately to avoid Slack timeout
-                const responseUrl = payload.response_url;
-                if (action.action_id === "next_page" || action.action_id === "back_page") {
-                    // Immediately update the message with a loading indicator
-                    await fetch(payload.response_url, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            response_type: "in_channel",
-                            replace_original: true,
-                            blocks: [
-                                { type: "section", text: { type: "mrkdwn", text: ":hourglass_flowing_sand: Loading page..." } }
-                            ]
-                        })
-                    });
-                    setTimeout(async () => {
-                        try {
-                            const { query, page } = parsedValue;
-                            const perPage = 10; // Always 10 per page
-                            // First, get the pagination object for the current query (page 1)
-                            let pageUrl: string | undefined = undefined;
-                            if (page > 1) {
-                                // Fetch page 1 to get the correct other_pages URLs
-                                const { pagination: firstPagePagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
-                                if (firstPagePagination && firstPagePagination.other_pages && firstPagePagination.other_pages[String(page)]) {
-                                    pageUrl = firstPagePagination.other_pages[String(page)];
-                                }
-                            }
-                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage, pageUrl });
-                            let totalPages = 1;
-                            if (apiPagination && apiPagination.other_pages) {
-                                totalPages = 1 + Object.keys(apiPagination.other_pages).length;
-                            }
-                            const { pageProducts } = paginateProducts(products, page, perPage, apiPagination?.total_results);
-                            const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
-                            const responseBody = {
-                                response_type: "in_channel",
-                                replace_original: true,
-                                blocks,
-                            };
-                            console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
-                            await fetch(responseUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
-                        } catch (err) {
-                            console.error(`[COMMAND] (async) Error in ${action.action_id}:`, err);
-                        }
-                    }, 0);
-                    return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                } else if (action.action_id.startsWith("select_product_")) {
-                    setTimeout(async () => {
-                        try {
-                            const { productIndex, query, page } = parsedValue;
-                            const perPage = 10;
-                            // Fetch the products for the current page
-                            const { products } = await amazonSearchTool.execute({ query, page, perPage });
-                            const product = products[productIndex];
-                            if (!product) throw new Error("Product not found for selection");
-                            // Simulate a user message with the Amazon URL
-                            const userMessage = `Buy this ${product.url}`;
-                            // Compose a fake thread for generateResponse
-                            const messages: CoreMessage[] = [
-                                { role: "user", content: userMessage }
-                            ];
-                            // Call generateResponse to trigger the order flow
-                            const result = await generateResponse(messages);
-                            // Post the result back to Slack
-                            const responseBody = {
-                                response_type: "in_channel",
-                                replace_original: false,
-                                text: result,
-                            };
-                            await fetch(responseUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
-                        } catch (err) {
-                            console.error("[COMMAND] (async) Error in select_product order flow:", err);
-                        }
-                    }, 0);
-                    return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
+                // Find the context block with the products
+                const contextBlock = payload.message.blocks.find((b: any) => b.type === "context" && b.elements && b.elements[0].text.startsWith("__PRODUCTS__"));
+                if (!contextBlock) {
+                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Product data missing.` }), {
                         status: 200,
                         headers: { "Content-Type": "application/json" },
                     });
                 }
+                const productsJson = contextBlock.elements[0].text.replace("__PRODUCTS__", "");
+                let allProducts: Product[] = [];
+                try {
+                    allProducts = JSON.parse(Buffer.from(productsJson, 'base64').toString('utf-8'));
+                } catch (err) {
+                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Failed to decode product data.` }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
+                const page = parsedValue.page || 1;
+                const perPage = 10;
+                const { pageProducts, totalPages } = paginateProducts(allProducts, page, perPage);
+                const blocks = formatProductBlocks(pageProducts, page, totalPages, payload.message.blocks[0].text.text.match(/`([^`]*)`/)?.[1] || '', allProducts);
+                const responseBody = {
+                    response_type: "in_channel",
+                    replace_original: true,
+                    blocks,
+                };
+                console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
+                await fetch(payload.response_url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(responseBody),
+                });
+                return new Response("", { status: 200 });
             }
             return new Response("", { status: 200 });
         }
@@ -223,16 +173,19 @@ export async function POST(request: Request) {
             });
         }
         try {
-            const perPage = 10; // Always 10 per page
-            console.log("[COMMAND] Executing Amazon search", { query });
-            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
-            console.log('[DEBUG] apiPagination:', JSON.stringify(apiPagination, null, 2));
-            // Use total_results or total_pages from apiPagination if available
-            let totalPages = 1;
-            if (apiPagination && apiPagination.other_pages) {
-                totalPages = 1 + Object.keys(apiPagination.other_pages).length;
+            const perPage = 10;
+            // Fetch as many products as possible (up to MAX_PRODUCTS)
+            let allProducts: Product[] = [];
+            let page = 1;
+            while (allProducts.length < MAX_PRODUCTS) {
+                const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage: 20 });
+                if (!products.length) break;
+                allProducts.push(...products);
+                if (!pagination.next || !pagination.other_pages || !pagination.other_pages[String(page + 1)]) break;
+                page++;
             }
-            if (!products.length) {
+            allProducts = allProducts.slice(0, MAX_PRODUCTS);
+            if (!allProducts.length) {
                 console.log("[COMMAND] No products found");
                 return new Response(
                     JSON.stringify({
@@ -242,8 +195,8 @@ export async function POST(request: Request) {
                     { status: 200, headers: { "Content-Type": "application/json" } }
                 );
             }
-            const { pageProducts } = paginateProducts(products, 1, perPage, apiPagination?.total_results);
-            const blocks = formatProductBlocks(pageProducts, 1, totalPages, query);
+            const { pageProducts, totalPages } = paginateProducts(allProducts, 1, perPage);
+            const blocks = formatProductBlocks(pageProducts, 1, totalPages, query, allProducts);
             const responseBody: any = {
                 response_type: "in_channel",
                 text: `Amazon search results for \"${query}\":`,
@@ -293,7 +246,7 @@ export async function POST(request: Request) {
                         const perPage = 20; // Show all results for the page
                         const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
                         const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
-                        const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
+                        const blocks = formatProductBlocks(pageProducts, page, totalPages, query, products); // Pass products for context
                         const responseBody = {
                             response_type: "in_channel",
                             replace_original: true,
