@@ -23,6 +23,7 @@ export const amazonSearchTool = {
             throw new Error(`Amazon search failed: ${response.statusText} - ${responseBody}`);
         }
         const data = JSON.parse(responseBody);
+        console.log('[DEBUG] SearchApi.io data.pagination:', JSON.stringify(data.pagination, null, 2));
 
         // Map results to a simplified product structure
         const products = (data.organic_results || []).map((product: any) => ({

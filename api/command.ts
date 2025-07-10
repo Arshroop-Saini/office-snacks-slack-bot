@@ -133,6 +133,7 @@ export async function POST(request: Request) {
                             const { query, page } = parsedValue;
                             const perPage = 10; // Always 10 per page
                             const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
+                            console.log('[DEBUG] apiPagination:', JSON.stringify(apiPagination, null, 2));
                             let totalPages = 1;
                             if (apiPagination && apiPagination.total_results && perPage) {
                                 totalPages = Math.ceil(apiPagination.total_results / perPage);
@@ -219,6 +220,7 @@ export async function POST(request: Request) {
             const perPage = 10; // Always 10 per page
             console.log("[COMMAND] Executing Amazon search", { query });
             const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
+            console.log('[DEBUG] apiPagination:', JSON.stringify(apiPagination, null, 2));
             // Use total_results or total_pages from apiPagination if available
             let totalPages = 1;
             if (apiPagination && apiPagination.total_results && perPage) {
