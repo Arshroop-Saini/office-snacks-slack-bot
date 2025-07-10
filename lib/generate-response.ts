@@ -71,7 +71,7 @@ export const generateResponse = async (
 };
 
 const getSystemPrompt = (payerAddress: string, userEmail?: string) => {
-  let emailStep = `3. Once they specify the office, ask for their email address to send the order confirmation to`;
+  let emailStep = `3. Once they specify the office, you already have the email address from Slack, this is the user's email address: ${userEmail}, so you can proceed to the next step.`;
   if (userEmail) {
     emailStep = `3. Once they specify the office, say: 'I found your email as ${userEmail} from Slack and will use it for your order.' Do not ask the user for their email or confirmation. Proceed to the next step.`;
   }
@@ -82,14 +82,14 @@ When someone requests snacks or supplies:
 1. Use the get_office_addresses tool to show available office locations
 2. Ask which office location they want the items delivered to - show a list of the office locations
 ${emailStep}
-4. Once you have both the office location and email address, proceed with the purchase using that office's address
+4. Once you have both the office location and email address (which you already have from Slack), proceed with the purchase using that office's address
 
 For the purchase process:
 1. Use productLocator format 'amazon:B08SVZ775L'
 2. If a URL is provided, extract the product locator from the provided Amazon URL
 3. Use the office address as the shipping address
 4. Use 'usdc' on 'solana' for payment
-5. The recipient.email MUST be the email provided by the user, do not set recipient.walletAddress
+5. The recipient.email MUST be the email that you already have from Slack (as every user has an email address with Slack account), do not set recipient.walletAddress
 6. The payment.payerAddress MUST be '${payerAddress}'
 7. After purchasing the product, assume the payment is successful and the order is complete - do not tell the user the order is awaiting payment
 8. After purchasing the product, if you have the image or image url, show it to the user
