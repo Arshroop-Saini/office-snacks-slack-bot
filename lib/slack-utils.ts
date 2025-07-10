@@ -135,3 +135,36 @@ export async function getUserEmail(userId: string): Promise<string | null> {
     return null;
   }
 }
+
+// Fetch a user's email and timezone info from Slack given their user_id
+export async function getUserProfile(userId: string): Promise<{ email: string | null, tz: string | null, tz_label: string | null, tz_offset: number | null }> {
+  try {
+    const result = await client.users.info({ user: userId });
+    // @ts-ignore
+    const profile = result.user?.profile || {};
+    return {
+      email: profile.email || null,
+      tz: result.user?.tz || null,
+      tz_label: result.user?.tz_label || null,
+      tz_offset: result.user?.tz_offset || null,
+    };
+  } catch (error) {
+    console.error('Error fetching user profile from Slack:', error);
+    return { email: null, tz: null, tz_label: null, tz_offset: null };
+  }
+}
+
+// Map timezone to office(s)
+export function getOfficeForTimezone(tz: string | null, tz_label: string | null): string[] {
+  if (!tz && !tz_label) return [];
+  if (tz === "America/Argentina/Buenos_Aires" || tz_label?.includes("Argentina")) {
+    return ["Buenos Aires"];
+  }
+  if (tz === "Europe/Madrid" || tz_label?.includes("Madrid") || tz_label?.includes("Central European")) {
+    return ["Madrid"];
+  }
+  if (tz === "America/New_York" || tz_label?.includes("Eastern Daylight")) {
+    return ["New York City", "Miami"];
+  }
+  return [];
+}

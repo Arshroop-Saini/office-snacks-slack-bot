@@ -1,5 +1,5 @@
 import { AppMentionEvent } from "@slack/web-api";
-import { client, getThread, getUserEmail } from "./slack-utils";
+import { client, getThread, getUserEmail, getUserProfile, getOfficeForTimezone } from "./slack-utils";
 import { generateResponse } from "./generate-response";
 
 const updateStatusUtil = async (
@@ -57,36 +57,89 @@ export async function handleNewAppMention(
   try {
     const updateMessage = await updateStatusUtil("is thinking...", event);
 
-    // Fetch user email if possible
+    // Fetch user profile (email, timezone)
     let userEmail: string | undefined = undefined;
+    let userTz: string | null = null;
+    let userTzLabel: string | null = null;
+    let office: string | undefined = undefined;
     if (user) {
-      console.log("[DEBUG] AppMention user ID:", user);
-      const email = await getUserEmail(user);
-      console.log("[DEBUG] AppMention user email:", email);
-      if (email) userEmail = email;
+      const profile = await getUserProfile(user);
+      console.log("[DEBUG] AppMention user profile:", profile);
+      userEmail = profile.email || undefined;
+      userTz = profile.tz;
+      userTzLabel = profile.tz_label;
+      const offices = getOfficeForTimezone(userTz, userTzLabel);
+      console.log("[DEBUG] Office candidates:", offices);
+      if (offices.length === 1) {
+        office = offices[0];
+      } else if (offices.length > 1) {
+        // Ambiguous: prompt user to choose
+        await client.chat.postMessage({
+          channel,
+          thread_ts,
+          text: `We have offices in both New York City and Miami for your timezone. Which one would you like to use for your order?`,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `We have offices in both *New York City* and *Miami* for your timezone. Which one would you like to use for your order?`,
+              },
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "New York City" },
+                  value: "New York City",
+                  action_id: "select_office_nyc"
+                },
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Miami" },
+                  value: "Miami",
+                  action_id: "select_office_miami"
+                }
+              ]
+            }
+          ]
+        });
+        return;
+      }
     }
 
-    if (thread_ts) {
-      const messages = await getThread(channel, thread_ts, botUserId);
-      const result = await generateResponse(messages, updateMessage, userEmail);
-      console.log("Generated response:", result);
-      await updateMessage(result);
-    } else {
-      const result = await generateResponse(
-        [{ role: "user", content: event.text }],
-        updateMessage,
-        userEmail
-      );
-      console.log("Generated response:", result);
-      await updateMessage(result);
-    }
+    // Ensure channel and thread_ts are strings
+    const safeChannel = channel || "";
+    const safeThreadTs = thread_ts || "";
+
+    const messages = await getThread(safeChannel, safeThreadTs, botUserId);
+    let result = await generateResponse(messages, updateMessage, userEmail ?? undefined);
+    console.log("Generated response for app mention:", result);
+
+    await client.chat.postMessage({
+      channel: safeChannel,
+      thread_ts: safeThreadTs,
+      text: result,
+      unfurl_links: false,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: result,
+          },
+        },
+      ],
+    });
+
+    await updateMessage("");
   } catch (error) {
     console.error("Error in handleNewAppMention:", error);
-    // Try to post an error message
     try {
       await client.chat.postMessage({
-        channel: event.channel,
-        thread_ts: event.thread_ts ?? event.ts,
+        channel: channel,
+        thread_ts: thread_ts,
         text: "Sorry, I encountered an error while processing your request. Please try again.",
       });
     } catch (errorPostingError) {
