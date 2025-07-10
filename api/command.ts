@@ -18,12 +18,13 @@ type Product = {
 };
 
 // Helper to paginate products
-function paginateProducts(products: Product[], page: number, perPage: number) {
-    const totalPages = Math.ceil(products.length / perPage);
+function paginateProducts(products: Product[], page: number, perPage: number, totalResults?: number) {
+    // Use totalResults if available, otherwise fallback to products.length
+    const totalPages = totalResults ? Math.ceil(totalResults / perPage) : Math.ceil(products.length / perPage);
     const start = (page - 1) * perPage;
     const end = start + perPage;
     return {
-        pageProducts: products.slice(start, end),
+        pageProducts: products.slice(0, perPage), // always use the current page's products
         totalPages,
     };
 }
@@ -39,24 +40,31 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
         },
     });
     // Products
-    for (const [i, product] of products.entries()) {
+    if (products.length === 0) {
         blocks.push({
             type: "section",
-            text: {
-                type: "mrkdwn",
-                text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}`,
-            },
-            accessory: product.image ? {
-                type: "image",
-                image_url: product.image,
-                alt_text: product.title,
-            } : undefined,
+            text: { type: "mrkdwn", text: ":warning: No products found for this page." },
         });
-        // Removed Select button actions block
-        blocks.push({ type: "divider" });
+    } else {
+        for (const [i, product] of products.entries()) {
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}`,
+                },
+                accessory: product.image ? {
+                    type: "image",
+                    image_url: product.image,
+                    alt_text: product.title,
+                } : undefined,
+            });
+            blocks.push({ type: "divider" });
+        }
     }
     // Pagination controls
     const elements = [];
+    // Only show Back if not on first page
     if (page > 1) {
         elements.push({
             type: "button",
@@ -65,6 +73,7 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
             action_id: "back_page",
         });
     }
+    // Only show Next if not on last page
     if (page < totalPages) {
         elements.push({
             type: "button",
@@ -107,12 +116,30 @@ export async function POST(request: Request) {
                 // Always respond immediately to avoid Slack timeout
                 const responseUrl = payload.response_url;
                 if (action.action_id === "next_page" || action.action_id === "back_page") {
+                    // Immediately update the message with a loading indicator
+                    await fetch(payload.response_url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            response_type: "in_channel",
+                            replace_original: true,
+                            blocks: [
+                                { type: "section", text: { type: "mrkdwn", text: ":hourglass_flowing_sand: Loading page..." } }
+                            ]
+                        })
+                    });
                     setTimeout(async () => {
                         try {
                             const { query, page } = parsedValue;
                             const perPage = 10; // Always 10 per page
                             const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                            const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
+                            let totalPages = 1;
+                            if (apiPagination && apiPagination.total_results && perPage) {
+                                totalPages = Math.ceil(apiPagination.total_results / perPage);
+                            } else if (apiPagination && apiPagination.total_pages) {
+                                totalPages = apiPagination.total_pages;
+                            }
+                            const { pageProducts } = paginateProducts(products, page, perPage, apiPagination?.total_results);
                             const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
                             const responseBody = {
                                 response_type: "in_channel",
@@ -191,24 +218,29 @@ export async function POST(request: Request) {
         try {
             const perPage = 10; // Always 10 per page
             console.log("[COMMAND] Executing Amazon search", { query });
-            const { products, page, pagination: apiPagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
-            console.log("[COMMAND] Amazon search results", { productsCount: products.length, page, apiPagination });
+            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
+            // Use total_results or total_pages from apiPagination if available
+            let totalPages = 1;
+            if (apiPagination && apiPagination.total_results && perPage) {
+                totalPages = Math.ceil(apiPagination.total_results / perPage);
+            } else if (apiPagination && apiPagination.total_pages) {
+                totalPages = apiPagination.total_pages;
+            }
             if (!products.length) {
                 console.log("[COMMAND] No products found");
                 return new Response(
                     JSON.stringify({
                         response_type: "ephemeral",
-                        text: `No products found for "${query}".`
+                        text: `No products found for \"${query}\".`
                     }),
                     { status: 200, headers: { "Content-Type": "application/json" } }
                 );
             }
-            // Only return Slack-allowed fields in the slash command response
-            const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
-            const blocks = formatProductBlocks(pageProducts, page, totalPages, query);
+            const { pageProducts } = paginateProducts(products, 1, perPage, apiPagination?.total_results);
+            const blocks = formatProductBlocks(pageProducts, 1, totalPages, query);
             const responseBody: any = {
                 response_type: "in_channel",
-                text: `Amazon search results for "${query}":`,
+                text: `Amazon search results for \"${query}\":`,
             };
             if (blocks && blocks.length > 0) {
                 responseBody.blocks = blocks;
