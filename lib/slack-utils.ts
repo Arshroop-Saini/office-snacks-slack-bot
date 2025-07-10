@@ -123,9 +123,13 @@ export const getBotId = async () => {
 // Fetch a user's email from Slack given their user_id
 export async function getUserEmail(userId: string): Promise<string | null> {
   try {
+    console.log('[DEBUG] Fetching email for userId:', userId);
     const result = await client.users.info({ user: userId });
     // @ts-ignore
-    return result.user?.profile?.email || null;
+    const email = result.user?.profile?.email || null;
+    console.log('[DEBUG] Slack user.info result:', JSON.stringify(result));
+    console.log('[DEBUG] Extracted email:', email);
+    return email;
   } catch (error) {
     console.error('Error fetching user email from Slack:', error);
     return null;
