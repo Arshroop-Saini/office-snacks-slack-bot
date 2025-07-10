@@ -186,52 +186,28 @@ export async function POST(request: Request) {
         try {
             const perPage = 10;
             const page = 1;
-            // Immediately respond to Slack with a simple ephemeral message (no blocks/buttons)
-            const responseUrl = params.response_url;
-            setTimeout(async () => {
-                try {
-                    const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
-                    if (!products.length) {
-                        await fetch(responseUrl, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                response_type: "ephemeral",
-                                text: `No products found for \"${query}\".`
-                            })
-                        });
-                        return;
-                    }
-                    const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-                    const blocks = formatProductBlocksStateless(products, page, totalPages, query);
-                    const responseBody = {
-                        response_type: "in_channel",
-                        text: `Amazon search results for \"${query}\":`,
-                        blocks,
-                    };
-                    await fetch(responseUrl, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(responseBody),
-                    });
-                } catch (err) {
-                    await fetch(responseUrl, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            response_type: "ephemeral",
-                            text: ":warning: Sorry, there was an error searching Amazon."
-                        })
-                    });
-                }
-            }, 0);
-            // Immediate response (no blocks/buttons)
+            const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
+            if (!products.length) {
+                console.log("[COMMAND] No products found");
+                return new Response(
+                    JSON.stringify({
+                        response_type: "ephemeral",
+                        text: `No products found for \"${query}\".`
+                    }),
+                    { status: 200, headers: { "Content-Type": "application/json" } }
+                );
+            }
+            const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+            const blocks = formatProductBlocksStateless(products, page, totalPages, query);
+            const responseBody = {
+                response_type: "in_channel",
+                text: `Amazon search results for \"${query}\":`,
+                blocks,
+            };
+            console.log("[COMMAND] Slash command response body:", JSON.stringify(responseBody));
             return new Response(
-                JSON.stringify({
-                    response_type: "ephemeral",
-                    text: `Searching for \"${query}\"...`
-                }),
-                { status: 200, headers: { "Content-Type": "application/json" } }
+                JSON.stringify(responseBody),
+                { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" } }
             );
         } catch (err) {
             console.error("[COMMAND] Error in Amazon search", err);
