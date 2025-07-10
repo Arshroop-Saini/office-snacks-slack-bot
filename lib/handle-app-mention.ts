@@ -53,6 +53,12 @@ export async function handleNewAppMention(
   }
 
   const { thread_ts, channel, user } = event;
+  // Use event.ts if thread_ts is missing (for new messages)
+  const rootTs = thread_ts || (event as any).ts;
+  if (!rootTs) {
+    console.error('[ERROR] No valid thread_ts or ts found in event:', event);
+    return;
+  }
 
   try {
     const updateMessage = await updateStatusUtil("is thinking...", event);
@@ -111,7 +117,7 @@ export async function handleNewAppMention(
 
     // Ensure channel and thread_ts are strings
     const safeChannel = channel || "";
-    const safeThreadTs = thread_ts || "";
+    const safeThreadTs = rootTs;
 
     const messages = await getThread(safeChannel, safeThreadTs, botUserId);
     let result = await generateResponse(messages, updateMessage, userEmail ?? undefined);
