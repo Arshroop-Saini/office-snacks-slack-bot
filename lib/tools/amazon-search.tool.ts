@@ -11,11 +11,16 @@ export const amazonSearchTool = {
         page: z.number().min(1).default(1).describe("The page number for pagination (optional)."),
         perPage: z.number().min(1).max(20).default(5).describe("Number of products per page (optional, max 20)."),
     }),
-    execute: async ({ query, page = 1, perPage = 5 }: { query: string; page?: number; perPage?: number }) => {
+    execute: async ({ query, page = 1, perPage = 5, pageUrl }: { query: string; page?: number; perPage?: number; pageUrl?: string }) => {
         const apiKey = process.env.SEARCH_API_KEY;
         if (!apiKey) throw new Error("SEARCH_API_KEY is not set in environment variables");
 
-        const url = `https://www.searchapi.io/api/v1/search?engine=amazon_search&amazon_domain=amazon.com&q=${encodeURIComponent(query)}&page=${page}&api_key=${apiKey}`;
+        let url;
+        if (pageUrl) {
+            url = pageUrl;
+        } else {
+            url = `https://www.searchapi.io/api/v1/search?engine=amazon_search&amazon_domain=amazon.com&q=${encodeURIComponent(query)}&page=${page}&api_key=${apiKey}`;
+        }
         const response = await fetch(url);
         const responseBody = await response.text();
         if (!response.ok) {

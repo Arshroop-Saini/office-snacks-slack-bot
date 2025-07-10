@@ -132,8 +132,16 @@ export async function POST(request: Request) {
                         try {
                             const { query, page } = parsedValue;
                             const perPage = 10; // Always 10 per page
-                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                            console.log('[DEBUG] apiPagination:', JSON.stringify(apiPagination, null, 2));
+                            // First, get the pagination object for the current query (page 1)
+                            let pageUrl: string | undefined = undefined;
+                            if (page > 1) {
+                                // Fetch page 1 to get the correct other_pages URLs
+                                const { pagination: firstPagePagination } = await amazonSearchTool.execute({ query, page: 1, perPage });
+                                if (firstPagePagination && firstPagePagination.other_pages && firstPagePagination.other_pages[String(page)]) {
+                                    pageUrl = firstPagePagination.other_pages[String(page)];
+                                }
+                            }
+                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage, pageUrl });
                             let totalPages = 1;
                             if (apiPagination && apiPagination.other_pages) {
                                 totalPages = 1 + Object.keys(apiPagination.other_pages).length;
