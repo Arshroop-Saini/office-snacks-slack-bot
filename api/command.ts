@@ -243,10 +243,10 @@ export async function POST(request: Request) {
                 setTimeout(async () => {
                     try {
                         const { query, page } = parsedValue;
-                        const perPage = 20; // Show all results for the page
+                        const perPage = 5;
                         const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                        const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
-                        const blocks = formatProductBlocksStateless(pageProducts, page, totalPages, query); // Pass products for context
+                        const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
+                        const blocks = formatProductBlocksStateless(products, page, totalPages, query);
                         const responseBody = {
                             response_type: "in_channel",
                             replace_original: true,
