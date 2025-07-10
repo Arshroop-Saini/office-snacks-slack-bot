@@ -134,7 +134,7 @@ export async function POST(request: Request) {
                 }
                 // Show instant loading indicator with disabled buttons
                 const { query, page } = parsedValue;
-                const perPage = 10;
+                const perPage = 5;
                 const loadingBlocks = formatProductBlocksStateless([], page, page, query, true);
                 await fetch(payload.response_url, {
                     method: "POST",
@@ -184,7 +184,7 @@ export async function POST(request: Request) {
             });
         }
         try {
-            const perPage = 10;
+            const perPage = 5;
             const page = 1;
             const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
             if (!products.length) {
