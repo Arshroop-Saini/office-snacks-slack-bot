@@ -290,6 +290,25 @@ export async function POST(request: Request) {
                     headers: { "Content-Type": "application/json" },
                 });
             }
+            if (
+                action.action_id === "select_office_nyc" ||
+                action.action_id === "select_office_miami" ||
+                action.action_id === "select_office_ba" ||
+                action.action_id === "select_office_madrid"
+            ) {
+                const selectedOffice = action.value;
+                await fetch(payload.response_url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        response_type: "in_channel",
+                        replace_original: true,
+                        text: `You selected *${selectedOffice}* as your office. Continuing your order...`
+                        // Optionally, trigger the next step in your order flow here
+                    }),
+                });
+                return new Response("", { status: 200 });
+            }
         }
         return new Response("", { status: 200 });
     }
