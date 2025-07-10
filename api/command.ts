@@ -43,7 +43,31 @@ function paginateProducts(products: Product[], page: number, perPage: number) {
     };
 }
 
-function formatProductBlocks(products: Product[], page: number, totalPages: number, query: string, allProducts: Product[]) {
+// Helper to generate pagination buttons with optional disabled state
+function getPaginationElements(query: string, page: number, totalPages: number, loading: boolean = false) {
+    const elements = [];
+    if (page > 1) {
+        elements.push({
+            type: "button",
+            text: { type: "plain_text", text: "Back" },
+            value: JSON.stringify({ query, page: page - 1 }),
+            action_id: "back_page",
+            ...(loading ? { style: "danger", disabled: true } : {})
+        });
+    }
+    if (page < totalPages) {
+        elements.push({
+            type: "button",
+            text: { type: "plain_text", text: "Next" },
+            value: JSON.stringify({ query, page: page + 1 }),
+            action_id: "next_page",
+            ...(loading ? { style: "danger", disabled: true } : {})
+        });
+    }
+    return elements;
+}
+
+function formatProductBlocksStateless(products: Product[], page: number, totalPages: number, query: string, loading: boolean = false) {
     const blocks = [];
     // Header
     blocks.push({
@@ -60,7 +84,7 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
             text: { type: "mrkdwn", text: ":warning: No products found for this page." },
         });
     } else {
-        for (const [i, product] of products.entries()) {
+        for (const product of products) {
             blocks.push({
                 type: "section",
                 text: {
@@ -77,44 +101,9 @@ function formatProductBlocks(products: Product[], page: number, totalPages: numb
         }
     }
     // Pagination controls
-    const elements = [];
-    if (page > 1) {
-        elements.push({
-            type: "button",
-            text: { type: "plain_text", text: "Back" },
-            value: JSON.stringify({ page: page - 1 }),
-            action_id: "back_page",
-        });
-    }
-    if (page < totalPages) {
-        elements.push({
-            type: "button",
-            text: { type: "plain_text", text: "Next" },
-            value: JSON.stringify({ page: page + 1 }),
-            action_id: "next_page",
-        });
-    }
+    const elements = getPaginationElements(query, page, totalPages, loading);
     if (elements.length > 0) {
         blocks.push({ type: "actions", elements });
-    }
-    // Store all products in a hidden context block (base64-encoded JSON for safety)
-    const minimalProducts = allProducts.map(minimalProduct);
-    const productsJson = Buffer.from(JSON.stringify(minimalProducts)).toString('base64');
-    console.log(`[DEBUG] Context block base64 length: ${productsJson.length}`);
-    if (productsJson.length > 2500) {
-        blocks.push({
-            type: "context",
-            elements: [
-                { type: "plain_text", text: `:warning: Too many products to cache for pagination. Please refine your search.` }
-            ]
-        });
-    } else {
-        blocks.push({
-            type: "context",
-            elements: [
-                { type: "plain_text", text: `__PRODUCTS__${productsJson}` }
-            ]
-        });
     }
     return blocks;
 }
@@ -123,7 +112,6 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") || "";
     console.log("[COMMAND] Incoming request", { contentType });
 
-    // 1. Handle Slack block actions sent as x-www-form-urlencoded (the usual case)
     if (contentType.includes("application/x-www-form-urlencoded")) {
         const formData = await request.text();
         const params = Object.fromEntries(new URLSearchParams(formData));
@@ -144,43 +132,38 @@ export async function POST(request: Request) {
                         headers: { "Content-Type": "application/json" },
                     });
                 }
-                // Find the context block with the products
-                const contextBlock = payload.message.blocks.find((b: any) => b.type === "context" && b.elements && b.elements[0].text.startsWith("__PRODUCTS__"));
-                if (!contextBlock) {
-                    console.error("[ERROR] Product context block missing in payload");
-                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Product data missing.` }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                }
-                const productsJson = contextBlock.elements[0].text.replace("__PRODUCTS__", "");
-                let allProducts: Product[] = [];
-                try {
-                    const decoded = Buffer.from(productsJson, 'base64').toString('utf-8');
-                    console.log(`[DEBUG] Decoded context block length: ${decoded.length}`);
-                    allProducts = JSON.parse(decoded);
-                } catch (err) {
-                    console.error("[ERROR] Failed to decode or parse product context block", err);
-                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Failed to decode product data.` }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                }
-                const page = parsedValue.page || 1;
+                // Show instant loading indicator with disabled buttons
+                const { query, page } = parsedValue;
                 const perPage = 10;
-                const { pageProducts, totalPages } = paginateProducts(allProducts, page, perPage);
-                const blocks = formatProductBlocks(pageProducts, page, totalPages, payload.message.blocks[0].text.text.match(/`([^`]*)`/)?.[1] || '', allProducts);
-                const responseBody = {
-                    response_type: "in_channel",
-                    replace_original: true,
-                    blocks,
-                };
-                console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
+                const loadingBlocks = formatProductBlocksStateless([], page, page, query, true);
                 await fetch(payload.response_url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(responseBody),
+                    body: JSON.stringify({ response_type: "ephemeral", text: "Loading page...", blocks: loadingBlocks }),
                 });
+                // Fetch new page from SearchApi.io
+                try {
+                    const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
+                    const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : page;
+                    const blocks = formatProductBlocksStateless(products, page, totalPages, query);
+                    const responseBody = {
+                        response_type: "in_channel",
+                        replace_original: true,
+                        blocks,
+                    };
+                    await fetch(payload.response_url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(responseBody),
+                    });
+                } catch (err) {
+                    console.error(`[COMMAND] Error fetching page:`, err);
+                    await fetch(payload.response_url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ response_type: "ephemeral", text: `:warning: Failed to load page. Please try again.` }),
+                    });
+                }
                 return new Response("", { status: 200 });
             }
             return new Response("", { status: 200 });
@@ -202,18 +185,9 @@ export async function POST(request: Request) {
         }
         try {
             const perPage = 10;
-            // Fetch as many products as possible (up to MAX_PRODUCTS)
-            let allProducts: Product[] = [];
-            let page = 1;
-            while (allProducts.length < MAX_PRODUCTS) {
-                const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage: 20 });
-                if (!products.length) break;
-                allProducts.push(...products);
-                if (!pagination.next || !pagination.other_pages || !pagination.other_pages[String(page + 1)]) break;
-                page++;
-            }
-            allProducts = allProducts.slice(0, MAX_PRODUCTS);
-            if (!allProducts.length) {
+            const page = 1;
+            const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
+            if (!products.length) {
                 console.log("[COMMAND] No products found");
                 return new Response(
                     JSON.stringify({
@@ -223,15 +197,13 @@ export async function POST(request: Request) {
                     { status: 200, headers: { "Content-Type": "application/json" } }
                 );
             }
-            const { pageProducts, totalPages } = paginateProducts(allProducts, 1, perPage);
-            const blocks = formatProductBlocks(pageProducts, 1, totalPages, query, allProducts);
-            const responseBody: any = {
+            const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+            const blocks = formatProductBlocksStateless(products, page, totalPages, query);
+            const responseBody = {
                 response_type: "in_channel",
                 text: `Amazon search results for \"${query}\":`,
+                blocks,
             };
-            if (blocks && blocks.length > 0) {
-                responseBody.blocks = blocks;
-            }
             console.log("[COMMAND] Slash command response body:", JSON.stringify(responseBody));
             return new Response(
                 JSON.stringify(responseBody),
@@ -274,7 +246,7 @@ export async function POST(request: Request) {
                         const perPage = 20; // Show all results for the page
                         const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
                         const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
-                        const blocks = formatProductBlocks(pageProducts, page, totalPages, query, products); // Pass products for context
+                        const blocks = formatProductBlocksStateless(pageProducts, page, totalPages, query); // Pass products for context
                         const responseBody = {
                             response_type: "in_channel",
                             replace_original: true,
