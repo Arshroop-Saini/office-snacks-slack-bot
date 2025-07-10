@@ -145,7 +145,7 @@ export async function POST(request: Request) {
                 try {
                     const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
                     const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : page;
-                    const blocks = formatProductBlocksStateless(products, page, totalPages, query);
+                    const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
                     const responseBody = {
                         response_type: "in_channel",
                         replace_original: true,
@@ -198,7 +198,7 @@ export async function POST(request: Request) {
                 );
             }
             const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-            const blocks = formatProductBlocksStateless(products, page, totalPages, query);
+            const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
             const responseBody = {
                 response_type: "in_channel",
                 text: `Amazon search results for \"${query}\":`,
@@ -246,7 +246,7 @@ export async function POST(request: Request) {
                         const perPage = 5;
                         const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
                         const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
-                        const blocks = formatProductBlocksStateless(products, page, totalPages, query);
+                        const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
                         const responseBody = {
                             response_type: "in_channel",
                             replace_original: true,
