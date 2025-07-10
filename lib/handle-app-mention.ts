@@ -68,7 +68,25 @@ export async function handleNewAppMention(
     let userTz: string | null = null;
     let userTzLabel: string | null = null;
     let office: string | undefined = undefined;
-    if (user) {
+    // Check if the user's message contains a valid office name
+    const officeNames = [
+      "Miami Office",
+      "New York Office",
+      "Buenos Aires Office",
+      "Madrid Office"
+    ];
+    let officeFromMessage: string | undefined = undefined;
+    if (event.text) {
+      for (const name of officeNames) {
+        if (event.text.toLowerCase().includes(name.toLowerCase())) {
+          officeFromMessage = name;
+          break;
+        }
+      }
+    }
+    if (officeFromMessage) {
+      office = officeFromMessage;
+    } else if (user) {
       const profile = await getUserProfile(user);
       console.log("[DEBUG] AppMention user profile:", profile);
       userEmail = profile.email || undefined;
