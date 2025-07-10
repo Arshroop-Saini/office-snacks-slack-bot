@@ -141,6 +141,12 @@ export async function handleNewAppMention(
       }
     }
 
+    // After office is determined, always fetch user email if not already set
+    if (!userEmail && user) {
+      const profile = await getUserProfile(user);
+      userEmail = profile.email || undefined;
+    }
+
     // Ensure channel and thread_ts are strings
     const safeChannel = channel || "";
     const safeThreadTs = rootTs;
