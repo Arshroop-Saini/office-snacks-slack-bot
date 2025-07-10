@@ -73,7 +73,7 @@ export const generateResponse = async (
 const getSystemPrompt = (payerAddress: string, userEmail?: string) => {
   let emailStep = `3. Once they specify the office, ask for their email address to send the order confirmation to`;
   if (userEmail) {
-    emailStep = `3. Once they specify the office, say: 'I found your email as ${userEmail} from Slack. Do you confirm using this email for your order?'`;
+    emailStep = `3. Once they specify the office, say: 'I found your email as ${userEmail} from Slack and will use it for your order.' Do not ask the user for their email or confirmation. Proceed to the next step.`;
   }
   return `
 You are a friendly and helpful Office Snacks Assistant. Your name is SnackBot. Your job is to help team members order snacks and supplies for their office location.
