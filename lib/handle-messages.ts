@@ -2,7 +2,7 @@ import type {
   AssistantThreadStartedEvent,
   GenericMessageEvent,
 } from "@slack/web-api";
-import { client, getThread, updateStatusUtil } from "./slack-utils";
+import { client, getThread, updateStatusUtil, getUserEmail } from "./slack-utils";
 import { generateResponse } from "./generate-response";
 
 export async function assistantThreadMessage(
@@ -47,14 +47,20 @@ export async function handleNewAssistantMessage(
   )
     return;
 
-  const { thread_ts, channel } = event;
+  const { thread_ts, channel, user } = event;
 
   try {
     const updateStatus = updateStatusUtil(channel, thread_ts);
     await updateStatus("is thinking...");
 
+    // Try to fetch the user's email from Slack
+    let userEmail: string | null = null;
+    if (user) {
+      userEmail = await getUserEmail(user);
+    }
+
     const messages = await getThread(channel, thread_ts, botUserId);
-    const result = await generateResponse(messages, updateStatus);
+    let result = await generateResponse(messages, updateStatus, userEmail ?? undefined);
     console.log("Generated response for assistant message:", result);
 
     await client.chat.postMessage({

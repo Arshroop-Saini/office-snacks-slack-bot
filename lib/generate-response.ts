@@ -11,7 +11,8 @@ import { recommendedSnacksTool } from "./tools/recommended-snacks.tool";
 
 export const generateResponse = async (
   messages: CoreMessage[],
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  userEmail?: string
 ) => {
   const payerKeypair = Keypair.fromSecretKey(
     bs58.decode(process.env.SOLANA_SECRET_KEY as string)
@@ -46,7 +47,7 @@ export const generateResponse = async (
     messages,
     tools,
     maxSteps: 10,
-    system: getSystemPrompt(payerKeypair.publicKey.toBase58()),
+    system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail),
   });
 
   console.log(
@@ -60,14 +61,18 @@ export const generateResponse = async (
   return text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*");
 };
 
-const getSystemPrompt = (payerAddress: string) => {
+const getSystemPrompt = (payerAddress: string, userEmail?: string) => {
+  let emailStep = `3. Once they specify the office, ask for their email address to send the order confirmation to`;
+  if (userEmail) {
+    emailStep = `3. Once they specify the office, say: 'I found your email as ${userEmail} from Slack. Do you confirm using this email for your order?'`;
+  }
   return `
 You are a friendly and helpful Office Snacks Assistant. Your name is SnackBot. Your job is to help team members order snacks and supplies for their office location.
 
 When someone requests snacks or supplies:
 1. Use the get_office_addresses tool to show available office locations
 2. Ask which office location they want the items delivered to - show a list of the office locations
-3. Once they specify the office, ask for their email address to send the order confirmation to
+${emailStep}
 4. Once you have both the office location and email address, proceed with the purchase using that office's address
 
 For the purchase process:
