@@ -122,20 +122,15 @@ export async function POST(request: Request) {
             if (payload.type === "block_actions") {
                 const action = payload.actions[0];
                 let parsedValue;
-                if (typeof action.value === "string" && (action.value.trim().startsWith("{") || action.value.trim().startsWith("["))) {
-                    try {
-                        parsedValue = JSON.parse(action.value);
-                        console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
-                    } catch (err) {
-                        console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
-                        return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
-                            status: 200,
-                            headers: { "Content-Type": "application/json" },
-                        });
-                    }
-                } else {
-                    parsedValue = action.value;
-                    console.log(`[COMMAND] Using action.value as string for ${action.action_id}:`, parsedValue);
+                try {
+                    parsedValue = JSON.parse(action.value);
+                    console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
+                } catch (err) {
+                    console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
+                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
                 }
                 // Show instant loading indicator with disabled buttons
                 const { query, page } = parsedValue;
@@ -233,20 +228,15 @@ export async function POST(request: Request) {
         if (payload.type === "block_actions") {
             const action = payload.actions[0];
             let parsedValue;
-            if (typeof action.value === "string" && (action.value.trim().startsWith("{") || action.value.trim().startsWith("["))) {
-                try {
-                    parsedValue = JSON.parse(action.value);
-                    console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
-                } catch (err) {
-                    console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
-                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                }
-            } else {
-                parsedValue = action.value;
-                console.log(`[COMMAND] Using action.value as string for ${action.action_id}:`, parsedValue);
+            try {
+                parsedValue = JSON.parse(action.value);
+                console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
+            } catch (err) {
+                console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
+                return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
             }
             const responseUrl = payload.response_url;
             if (action.action_id === "next_page" || action.action_id === "back_page") {
@@ -299,57 +289,6 @@ export async function POST(request: Request) {
                     status: 200,
                     headers: { "Content-Type": "application/json" },
                 });
-            }
-            if (
-                action.action_id === "select_office_nyc" ||
-                action.action_id === "select_office_miami" ||
-                action.action_id === "select_office_ba" ||
-                action.action_id === "select_office_madrid"
-            ) {
-                // Log the payload for debugging
-                console.log("[COMMAND] Office selection button payload:", JSON.stringify(payload, null, 2));
-                let parsedValue;
-                if (typeof action.value === "string" && (action.value.trim().startsWith("{") || action.value.trim().startsWith("["))) {
-                    parsedValue = JSON.parse(action.value);
-                } else {
-                    parsedValue = { office: action.value };
-                }
-                const { office, query, user, thread_ts } = parsedValue;
-                // Fetch user email
-                let userEmail = null;
-                if (user) {
-                    try {
-                        const { email } = await import("../lib/slack-utils").then(m => m.getUserProfile(user));
-                        userEmail = email;
-                    } catch (e) {
-                        console.error("[COMMAND] Failed to fetch user email for office selection:", e);
-                    }
-                }
-                // Compose messages for generateResponse
-                const messages = [
-                    { role: "user", content: String(query || "") },
-                    { role: "user", content: `My office location is ${office}` }
-                ] as import("ai").CoreMessage[];
-                // Call generateResponse
-                const { generateResponse } = await import("../lib/generate-response");
-                const result = await generateResponse(messages, undefined, userEmail ?? undefined);
-                // Post the result to the thread
-                await fetch(payload.response_url, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        response_type: "in_channel",
-                        replace_original: true,
-                        text: result,
-                        blocks: [
-                            {
-                                type: "section",
-                                text: { type: "mrkdwn", text: result },
-                            },
-                        ],
-                    }),
-                });
-                return new Response("", { status: 200 });
             }
         }
         return new Response("", { status: 200 });
