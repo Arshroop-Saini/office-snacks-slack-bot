@@ -161,7 +161,7 @@ export async function POST(request: Request) {
                     await fetch(payload.response_url, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ response_type: "ephemeral", text: `:warning: Failed to load page. Please try again.` })
+                        body: JSON.stringify({ response_type: "ephemeral", text: `:warning: Failed to load page. Please try again.` }),
                     });
                 }
                 return new Response("", { status: 200 });
@@ -220,5 +220,80 @@ export async function POST(request: Request) {
             );
         }
     }
+
+    // 2. Handle Slack interactivity payloads as application/json (rare, but possible)
+    if (contentType.includes("application/json")) {
+        const payload = await request.json();
+        console.log("[COMMAND] Interactivity payload", JSON.stringify(payload, null, 2));
+        if (payload.type === "block_actions") {
+            const action = payload.actions[0];
+            let parsedValue;
+            try {
+                parsedValue = JSON.parse(action.value);
+                console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
+            } catch (err) {
+                console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
+                return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+            const responseUrl = payload.response_url;
+            if (action.action_id === "next_page" || action.action_id === "back_page") {
+                setTimeout(async () => {
+                    try {
+                        const { query, page } = parsedValue;
+                        const perPage = 20; // Show all results for the page
+                        const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
+                        const { pageProducts, totalPages } = paginateProducts(products, page, perPage);
+                        const blocks = formatProductBlocksStateless(pageProducts, page, totalPages, query); // Pass products for context
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: true,
+                            blocks,
+                        };
+                        console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
+                        await fetch(responseUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error(`[COMMAND] (async) Error in ${action.action_id}:`, err);
+                    }
+                }, 0);
+                return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            } else if (action.action_id.startsWith("select_product_")) {
+                setTimeout(async () => {
+                    try {
+                        const { productIndex } = parsedValue;
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: false,
+                            text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                        };
+                        console.log("[COMMAND] (async) Responding to select_product with:", JSON.stringify(responseBody, null, 2));
+                        await fetch(responseUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error("[COMMAND] (async) Error in select_product:", err);
+                    }
+                }, 0);
+                return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+        }
+        return new Response("", { status: 200 });
+    }
+
+    // Fallback: unsupported content type
     return new Response("Unsupported content type", { status: 400 });
-}
+} 
