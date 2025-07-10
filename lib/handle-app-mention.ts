@@ -1,5 +1,5 @@
 import { AppMentionEvent } from "@slack/web-api";
-import { client, getThread } from "./slack-utils";
+import { client, getThread, getUserEmail } from "./slack-utils";
 import { generateResponse } from "./generate-response";
 
 const updateStatusUtil = async (
@@ -52,20 +52,30 @@ export async function handleNewAppMention(
     return;
   }
 
-  const { thread_ts, channel } = event;
+  const { thread_ts, channel, user } = event;
 
   try {
     const updateMessage = await updateStatusUtil("is thinking...", event);
 
+    // Fetch user email if possible
+    let userEmail: string | undefined = undefined;
+    if (user) {
+      console.log("[DEBUG] AppMention user ID:", user);
+      const email = await getUserEmail(user);
+      console.log("[DEBUG] AppMention user email:", email);
+      if (email) userEmail = email;
+    }
+
     if (thread_ts) {
       const messages = await getThread(channel, thread_ts, botUserId);
-      const result = await generateResponse(messages, updateMessage);
+      const result = await generateResponse(messages, updateMessage, userEmail);
       console.log("Generated response:", result);
       await updateMessage(result);
     } else {
       const result = await generateResponse(
         [{ role: "user", content: event.text }],
         updateMessage,
+        userEmail
       );
       console.log("Generated response:", result);
       await updateMessage(result);
