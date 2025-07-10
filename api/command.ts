@@ -74,7 +74,7 @@ function formatProductBlocksStateless(products: Product[], page: number, totalPa
         type: "section",
         text: {
             type: "mrkdwn",
-            text: `*Amazon Results for:* \`${query}\`  |  *Page:* ${page}`,
+            text: `*Amazon Results for:* \`${query}\`  |  *Page:* ${page} of ${totalPages}`,
         },
     });
     // Products
