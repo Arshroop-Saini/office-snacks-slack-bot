@@ -66,20 +66,46 @@ export const generateResponse = async (
   // Get search context (thread-scoped or recent)
   const lastSearchQuery = (userId && channelId) ? getSearchContext(threadTs, channelId, userId) : undefined;
 
+  // Get the last message for debugging and fallback detection
+  const lastMessage = messages[messages.length - 1];
+
   console.log(`🔍 [SEARCH_CONTEXT] Debug info:`, {
     userId,
     channelId,
     threadTs,
     lastSearchQuery,
-    userMessage: messages[messages.length - 1]?.content
+    userMessage: typeof lastMessage?.content === 'string' ? lastMessage.content : '[non-text content]'
   });
+
+  // Fallback: detect search refinements even without explicit context
+  let fallbackSearchContext = undefined;
+  const userMessage = (typeof lastMessage?.content === 'string' ? lastMessage.content : '').toLowerCase();
+  const searchRefinementPatterns = [
+    /\b(black|white|red|blue|green|yellow|pink|purple|orange|gray|grey|silver|gold)\b.*\b(case|cases|cover|covers|ones|one)\b/,
+    /\b(cheaper|cheap|expensive|premium|budget|affordable)\b.*\b(ones|one|options|option)\b/,
+    /\b(wireless|wired|bluetooth|usb|charging)\b/,
+    /\b(waterproof|water.resistant|durable|protective)\b/,
+    /\b(looking for|want|need|searching for)\b.*\b(black|white|red|blue|green|cheaper|wireless|waterproof)\b/,
+    /\bactually looking for\b/,
+    /\bi want\b.*\b(black|white|red|blue|green|cheaper|wireless)\b/
+  ];
+
+  if (!lastSearchQuery && searchRefinementPatterns.some(pattern => pattern.test(userMessage))) {
+    // Try to extract what they're looking for
+    if (/\b(case|cases)\b/.test(userMessage)) {
+      fallbackSearchContext = 'phone cases'; // General fallback
+      console.log(`🔍 [FALLBACK] Detected case refinement without context, using fallback: "${fallbackSearchContext}"`);
+    }
+  }
+
+  const searchQuery = lastSearchQuery || fallbackSearchContext;
 
   const generateTextResponse = await generateText({
     model: openai("gpt-4o"),
     messages: messagesWithEmail,
     tools,
     maxSteps: 10,
-    system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail, lastSearchQuery),
+    system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail, searchQuery),
   });
 
   console.log(

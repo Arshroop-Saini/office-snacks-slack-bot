@@ -21,34 +21,61 @@ export const amazonSearchTool = {
         } else {
             url = `https://www.searchapi.io/api/v1/search?engine=amazon_search&amazon_domain=amazon.com&q=${encodeURIComponent(query)}&page=${page}&api_key=${apiKey}`;
         }
-        const response = await fetch(url);
-        const responseBody = await response.text();
-        if (!response.ok) {
-            console.error("[AMAZON SEARCH TOOL] API error", { status: response.status, body: responseBody });
-            throw new Error(`Amazon search failed: ${response.statusText} - ${responseBody}`);
+
+        console.log(`[AMAZON_SEARCH_TOOL] 🔍 Searching: "${query}" (page ${page})`);
+
+        // Add timeout to prevent Vercel function timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+
+        try {
+            const response = await fetch(url, {
+                signal: controller.signal,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; SlackBot/1.0)'
+                }
+            });
+            clearTimeout(timeoutId);
+
+            const responseBody = await response.text();
+            if (!response.ok) {
+                console.error("[AMAZON SEARCH TOOL] API error", { status: response.status, body: responseBody });
+                throw new Error(`Amazon search failed: ${response.statusText} - ${responseBody}`);
+            }
+            const data = JSON.parse(responseBody);
+            console.log('[DEBUG] SearchApi.io data.pagination:', JSON.stringify(data.pagination, null, 2));
+
+            // Map results to a simplified product structure
+            const products = (data.organic_results || []).map((product: any) => ({
+                title: product.title,
+                url: product.link,
+                image: product.thumbnail,
+                price: product.price || null,
+                currency: null, // price is a string like "$45.44"
+                rating: product.rating || null,
+                ratings_total: product.reviews || null,
+                eta: product.fulfillment?.standard_delivery?.text || null,
+                description: product.brand || "",
+            }));
+
+            console.log(`[AMAZON_SEARCH_TOOL] ✅ Found ${products.length} products for "${query}"`);
+
+            return {
+                products,
+                page,
+                perPage,
+                totalResults: (data.organic_results || []).length,
+                pagination: data.pagination || {},
+                query, // Include the query in response for debugging
+            };
+        } catch (error) {
+            clearTimeout(timeoutId);
+            if (error instanceof Error && error.name === 'AbortError') {
+                console.error(`[AMAZON_SEARCH_TOOL] ⏰ Search timeout for "${query}"`);
+                throw new Error(`Search timed out after 45 seconds. Please try a more specific query.`);
+            }
+            console.error(`[AMAZON_SEARCH_TOOL] ❌ Search failed for "${query}":`, error);
+            throw error;
         }
-        const data = JSON.parse(responseBody);
-        console.log('[DEBUG] SearchApi.io data.pagination:', JSON.stringify(data.pagination, null, 2));
-
-        // Map results to a simplified product structure
-        const products = (data.organic_results || []).map((product: any) => ({
-            title: product.title,
-            url: product.link,
-            image: product.thumbnail,
-            price: product.price || null,
-            currency: null, // price is a string like "$45.44"
-            rating: product.rating || null,
-            ratings_total: product.reviews || null,
-            eta: product.fulfillment?.standard_delivery?.text || null,
-            description: product.brand || "",
-        }));
-
-        return {
-            products,
-            page,
-            perPage,
-            totalResults: (data.organic_results || []).length,
-            pagination: data.pagination || {},
-        };
     },
 }; 
