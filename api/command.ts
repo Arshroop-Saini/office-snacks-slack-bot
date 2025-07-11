@@ -1,7 +1,7 @@
 import { amazonSearchTool } from "../lib/tools/amazon-search.tool";
 import { generateResponse } from "../lib/generate-response";
 import { client } from "../lib/slack-utils";
-import { storeLastSearch } from "../lib/search-context";
+import { storeRecentSearch, storeThreadSearch } from "../lib/search-context";
 import type { CoreMessage } from "ai";
 
 type Product = {
@@ -153,8 +153,8 @@ export async function POST(request: Request) {
                         blocks,
                     };
 
-                    // Store search context for conversational enhancement (pagination)
-                    storeLastSearch(payload.user.id, query);
+                    // Store recent search context for conversational enhancement (pagination)
+                    storeRecentSearch(payload.channel.id, payload.user.id, query);
 
                     await fetch(payload.response_url, {
                         method: "POST",
@@ -211,8 +211,8 @@ export async function POST(request: Request) {
             };
             console.log("[COMMAND] Slash command response body:", JSON.stringify(responseBody));
 
-            // Store search context for conversational enhancement
-            storeLastSearch(params.user_id, query);
+            // Store recent search context for conversational enhancement
+            storeRecentSearch(params.channel_id, params.user_id, query);
 
             return new Response(
                 JSON.stringify(responseBody),
@@ -263,8 +263,8 @@ export async function POST(request: Request) {
                         };
                         console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
 
-                        // Store search context for conversational enhancement (async pagination)
-                        storeLastSearch(payload.user.id, query);
+                        // Store recent search context for conversational enhancement (async pagination)
+                        storeRecentSearch(payload.channel.id, payload.user.id, query);
 
                         await fetch(responseUrl, {
                             method: "POST",

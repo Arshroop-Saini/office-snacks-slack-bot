@@ -9,13 +9,15 @@ import { splToken } from "@goat-sdk/plugin-spl-token";
 import { officeAddressesTool } from "./tools/office-addresses.tool";
 import { recommendedSnacksTool } from "./tools/recommended-snacks.tool";
 import { amazonSearchTool } from "./tools/amazon-search.tool";
-import { getLastSearch } from "./search-context";
+import { getSearchContext } from "./search-context";
 
 export const generateResponse = async (
   messages: CoreMessage[],
   updateStatus?: (status: string) => void,
   userEmail?: string,
-  userId?: string
+  userId?: string,
+  threadTs?: string,
+  channelId?: string
 ) => {
   const payerKeypair = Keypair.fromSecretKey(
     bs58.decode(process.env.SOLANA_SECRET_KEY as string)
@@ -55,8 +57,8 @@ export const generateResponse = async (
     ];
   }
 
-  // Get last search query for context
-  const lastSearchQuery = userId ? getLastSearch(userId) : undefined;
+  // Get search context (thread-scoped or recent)
+  const lastSearchQuery = (userId && channelId) ? getSearchContext(threadTs, channelId, userId) : undefined;
 
   const generateTextResponse = await generateText({
     model: openai("gpt-4o"),
