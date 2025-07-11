@@ -154,15 +154,18 @@ const getSystemPrompt = (payerAddress: string, userEmail?: string, lastSearchQue
 
 🔍 CRITICAL SEARCH CONTEXT: The user recently searched for "${lastSearchQuery}" on Amazon. 
 
-IMPORTANT: If the user mentions ANYTHING related to products, items, colors, specifications, features, brands, or modifications to their search - you MUST use the search_amazon_products tool with a combined query.
+MANDATORY BEHAVIOR: When the user mentions ANY product attribute, color, feature, or modification, you MUST automatically combine it with their previous search and use search_amazon_products immediately. DO NOT ask for clarification.
 
-Examples that should trigger Amazon search:
-- "I want black ones" → search for "${lastSearchQuery} black"
-- "looking for something cheaper" → search for "${lastSearchQuery} cheap"  
-- "I need wireless" → search for "${lastSearchQuery} wireless"
-- "what about red cases" → search for "${lastSearchQuery} red cases"
+AUTOMATIC SEARCH COMBINATIONS (examples):
+- Previous: "iphone 15 cases" + User: "black case" → IMMEDIATELY search for "iphone 15 cases black"
+- Previous: "sparkling water" + User: "non-flavored ones" → IMMEDIATELY search for "sparkling water non-flavored" 
+- Previous: "bluetooth headphones" + User: "wireless" → IMMEDIATELY search for "bluetooth headphones wireless"
+- Previous: "office chairs" + User: "ergonomic" → IMMEDIATELY search for "office chairs ergonomic"
+- Previous: "protein bars" + User: "chocolate ones" → IMMEDIATELY search for "protein bars chocolate"
 
-Do NOT ask for office location or start ordering process unless they explicitly say they want to order a specific product.` : '';
+NEVER ask "what type of X are you looking for?" when the user already searched for X. Just combine and search immediately.
+
+Current user search was: "${lastSearchQuery}" - any mention of features/colors/attributes should be combined with this automatically.` : '';
 
   return `
 You are a friendly and helpful Office Snacks Assistant. Your name is SnackBot. Your job is to help team members order snacks and supplies for their office location.${searchContext}
