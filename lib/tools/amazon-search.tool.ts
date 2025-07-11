@@ -26,7 +26,7 @@ export const amazonSearchTool = {
 
         // Add timeout to prevent Vercel function timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // Reduce from 45s to 20s
 
         try {
             const response = await fetch(url, {
@@ -72,7 +72,7 @@ export const amazonSearchTool = {
             clearTimeout(timeoutId);
             if (error instanceof Error && error.name === 'AbortError') {
                 console.error(`[AMAZON_SEARCH_TOOL] ⏰ Search timeout for "${query}"`);
-                throw new Error(`Search timed out after 45 seconds. Please try a more specific query.`);
+                throw new Error(`Search timed out after 20 seconds. Please try a more specific query.`);
             }
             console.error(`[AMAZON_SEARCH_TOOL] ❌ Search failed for "${query}":`, error);
             throw error;

@@ -81,21 +81,28 @@ export const generateResponse = async (
   // Fallback: detect search refinements even without explicit context
   let fallbackSearchContext = undefined;
   const userMessage = (typeof lastMessage?.content === 'string' ? lastMessage.content : '').toLowerCase();
-  const searchRefinementPatterns = [
-    /\b(black|white|red|blue|green|yellow|pink|purple|orange|gray|grey|silver|gold)\b.*\b(case|cases|cover|covers|ones|one)\b/,
-    /\b(cheaper|cheap|expensive|premium|budget|affordable)\b.*\b(ones|one|options|option)\b/,
-    /\b(wireless|wired|bluetooth|usb|charging)\b/,
-    /\b(waterproof|water.resistant|durable|protective)\b/,
-    /\b(looking for|want|need|searching for)\b.*\b(black|white|red|blue|green|cheaper|wireless|waterproof)\b/,
-    /\bactually looking for\b/,
-    /\bi want\b.*\b(black|white|red|blue|green|cheaper|wireless)\b/
-  ];
 
-  if (!lastSearchQuery && searchRefinementPatterns.some(pattern => pattern.test(userMessage))) {
-    // Try to extract what they're looking for
-    if (/\b(case|cases)\b/.test(userMessage)) {
-      fallbackSearchContext = 'phone cases'; // General fallback
-      console.log(`🔍 [FALLBACK] Detected case refinement without context, using fallback: "${fallbackSearchContext}"`);
+  // IMPROVED: More specific and faster fallback detection
+  if (!lastSearchQuery) {
+    // Quick pattern matching for common refinement phrases
+    if (/\b(black|white|red|blue|green|yellow|pink|purple|orange|gray|grey|silver|gold)\b/.test(userMessage)) {
+      if (/\b(case|cases|cover|covers)\b/.test(userMessage)) {
+        fallbackSearchContext = 'phone cases';
+      } else if (/\b(headphone|headphones|earphone|earphones|earbuds)\b/.test(userMessage)) {
+        fallbackSearchContext = 'headphones';
+      } else if (/\b(water|bottle|bottles)\b/.test(userMessage)) {
+        fallbackSearchContext = 'water bottles';
+      } else {
+        // Generic product search based on color
+        const colorMatch = userMessage.match(/\b(black|white|red|blue|green|yellow|pink|purple|orange|gray|grey|silver|gold)\b/);
+        if (colorMatch) {
+          fallbackSearchContext = `${colorMatch[0]} products`;
+        }
+      }
+    }
+
+    if (fallbackSearchContext) {
+      console.log(`🔍 [FALLBACK] Detected refinement without context, using: "${fallbackSearchContext}"`);
     }
   }
 
@@ -105,7 +112,7 @@ export const generateResponse = async (
     model: openai("gpt-4o"),
     messages: messagesWithEmail,
     tools,
-    maxSteps: 5,
+    maxSteps: 3, // Reduce from 5 to 3 to prevent timeouts
     system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail, searchQuery, userId),
   });
 

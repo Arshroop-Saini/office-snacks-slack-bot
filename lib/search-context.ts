@@ -74,7 +74,7 @@ export function getSearchContext(threadTs: string | undefined, channelId: string
         if (threadTs) {
             console.log(`[SEARCH_CONTEXT] 🔄 Promoting recent search to thread ${threadTs}`);
             storeThreadSearch(threadTs, recent.query, 1);
-            recentSearches.delete(key); // Clean up
+            // Don't delete the recent search yet - keep it as backup
             return { query: recent.query, page: 1 };
         }
 
@@ -85,6 +85,23 @@ export function getSearchContext(threadTs: string | undefined, channelId: string
         console.log(`[SEARCH_CONTEXT] ❌ Recent search found but expired for ${key}: "${recent.query}" (age: ${(Date.now() - recent.timestamp) / 1000}s)`);
     } else {
         console.log(`[SEARCH_CONTEXT] ❌ No recent search found for ${key}`);
+    }
+
+    // ENHANCED: Check if we can find a recent search for ANY user in this channel (fallback)
+    console.log(`[SEARCH_CONTEXT] 🔄 Checking for any recent searches in channel ${channelId}...`);
+    for (const [searchKey, searchData] of recentSearches.entries()) {
+        if (searchKey.startsWith(`${channelId}-`) && (Date.now() - searchData.timestamp < 10 * 60 * 1000)) {
+            console.log(`[SEARCH_CONTEXT] 🔄 Found channel fallback search: ${searchKey} -> "${searchData.query}"`);
+
+            // If we're in a thread, promote this to thread-specific storage
+            if (threadTs) {
+                console.log(`[SEARCH_CONTEXT] 🔄 Promoting channel fallback to thread ${threadTs}`);
+                storeThreadSearch(threadTs, searchData.query, 1);
+                return { query: searchData.query, page: 1 };
+            }
+
+            return { query: searchData.query, page: 1 };
+        }
     }
 
     console.log(`[SEARCH_CONTEXT] ❌ No search context found for thread ${threadTs} or ${key}`);
