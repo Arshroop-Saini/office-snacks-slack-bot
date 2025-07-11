@@ -8,11 +8,14 @@ import { crossmintHeadlessCheckout } from "@goat-sdk/plugin-crossmint-headless-c
 import { splToken } from "@goat-sdk/plugin-spl-token";
 import { officeAddressesTool } from "./tools/office-addresses.tool";
 import { recommendedSnacksTool } from "./tools/recommended-snacks.tool";
+import { amazonSearchTool } from "./tools/amazon-search.tool";
+import { getLastSearch } from "./search-context";
 
 export const generateResponse = async (
   messages: CoreMessage[],
   updateStatus?: (status: string) => void,
-  userEmail?: string
+  userEmail?: string,
+  userId?: string
 ) => {
   const payerKeypair = Keypair.fromSecretKey(
     bs58.decode(process.env.SOLANA_SECRET_KEY as string)
@@ -38,6 +41,7 @@ export const generateResponse = async (
     ...onChainTools,
     get_office_addresses: officeAddressesTool,
     get_recommended_snacks: recommendedSnacksTool,
+    search_amazon_products: amazonSearchTool,
   };
   // list all the available tool names
   console.log("🛠️ Available tools:", Object.keys(tools));
@@ -51,12 +55,15 @@ export const generateResponse = async (
     ];
   }
 
+  // Get last search query for context
+  const lastSearchQuery = userId ? getLastSearch(userId) : undefined;
+
   const generateTextResponse = await generateText({
     model: openai("gpt-4o"),
     messages: messagesWithEmail,
     tools,
     maxSteps: 10,
-    system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail),
+    system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail, lastSearchQuery),
   });
 
   console.log(
@@ -70,15 +77,21 @@ export const generateResponse = async (
   return text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*");
 };
 
-const getSystemPrompt = (payerAddress: string, userEmail?: string) => {
+const getSystemPrompt = (payerAddress: string, userEmail?: string, lastSearchQuery?: string) => {
   let emailStep = `3. Once they specify the office, you already have the email address from Slack, this is the user's email address: ${userEmail}, so you can proceed to the next step.`;
   if (userEmail) {
     emailStep = `3. Once they specify the office, say: 'I found your email as ${userEmail} from Slack and will use it for your order.' Do not ask the user for their email or confirmation. Proceed to the next step.`;
   }
   // Add office disambiguation step
   const officeDisambiguation = `\nIf the user's timezone matches both New York City and Miami (Eastern Daylight Time), prompt the user to choose between the two offices before proceeding. For example, say: 'We have offices in both New York City and Miami for your timezone. Which one would you like to use for your order?' and wait for their response.\nIf you cannot determine the user's office from their timezone, ask them to reply with their office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).`;
+
+  // Add search context information
+  const searchContext = lastSearchQuery ? `
+
+SEARCH CONTEXT: The user recently searched for "${lastSearchQuery}" on Amazon. If their current message seems related to refining or clarifying this search, use the search_amazon_products tool to search with a combined query (e.g., "${lastSearchQuery}" + their refinement). Otherwise, proceed with normal conversation.` : '';
+
   return `
-You are a friendly and helpful Office Snacks Assistant. Your name is SnackBot. Your job is to help team members order snacks and supplies for their office location.
+You are a friendly and helpful Office Snacks Assistant. Your name is SnackBot. Your job is to help team members order snacks and supplies for their office location.${searchContext}
 
 When someone requests snacks or supplies:
 1. Use the get_office_addresses tool to show available office locations

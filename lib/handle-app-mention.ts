@@ -152,7 +152,7 @@ export async function handleNewAppMention(
     const safeThreadTs = rootTs;
 
     const messages = await getThread(safeChannel, safeThreadTs, botUserId);
-    let result = await generateResponse(messages, updateMessage, userEmail ?? undefined);
+    let result = await generateResponse(messages, updateMessage, userEmail ?? undefined, user);
     console.log("Generated response for app mention:", result);
 
     await client.chat.postMessage({

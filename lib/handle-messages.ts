@@ -60,7 +60,7 @@ export async function handleNewAssistantMessage(
     }
 
     const messages = await getThread(channel, thread_ts, botUserId);
-    let result = await generateResponse(messages, updateStatus, userEmail ?? undefined);
+    let result = await generateResponse(messages, updateStatus, userEmail ?? undefined, user);
     console.log("Generated response for assistant message:", result);
 
     await client.chat.postMessage({
