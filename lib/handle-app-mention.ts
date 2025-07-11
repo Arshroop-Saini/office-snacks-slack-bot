@@ -1,6 +1,92 @@
 import { AppMentionEvent } from "@slack/web-api";
 import { client, getThread, getUserEmail, getUserProfile, getOfficeForTimezone } from "./slack-utils";
 import { generateResponse } from "./generate-response";
+import { amazonSearchTool } from "./tools/amazon-search.tool";
+
+// Product type definition (copied from command.ts)
+type Product = {
+  title: string;
+  url: string;
+  image?: string;
+  price?: string;
+  currency?: string;
+  rating?: number;
+  ratings_total?: number;
+  eta?: string;
+  description?: string;
+};
+
+// Simple query combination function
+function combineQueries(originalQuery: string, refinement: string): string {
+  // Simple approach: just combine with a space
+  return `${originalQuery} ${refinement}`.trim();
+}
+
+// Helper to generate pagination buttons (copied from command.ts)
+function getPaginationElements(query: string, page: number, totalPages: number, loading: boolean = false) {
+  const elements = [];
+  if (page > 1) {
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Back" },
+      value: JSON.stringify({ query, page: page - 1 }),
+      action_id: "back_page",
+      ...(loading ? { style: "danger", disabled: true } : {})
+    });
+  }
+  if (page < totalPages) {
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Next" },
+      value: JSON.stringify({ query, page: page + 1 }),
+      action_id: "next_page",
+      ...(loading ? { style: "danger", disabled: true } : {})
+    });
+  }
+  return elements;
+}
+
+// Format product blocks for Slack (copied from command.ts)
+function formatProductBlocksStateless(products: Product[], page: number, totalPages: number, query: string, loading: boolean = false) {
+  const blocks = [];
+  // Header
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `*Amazon Results for:* \`${query}\`  |  *Page:* ${page} of ${totalPages}`,
+    },
+  });
+  // Products
+  if (products.length === 0) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: ":warning: No products found for this page." },
+    });
+  } else {
+    for (const product of products) {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}`,
+        },
+        accessory: product.image ? {
+          type: "image",
+          image_url: product.image,
+          alt_text: product.title,
+        } : undefined,
+      });
+      blocks.push({ type: "divider" });
+    }
+  }
+  // Pagination controls
+  const elements = getPaginationElements(query, page, totalPages, loading);
+  if (elements.length > 0) {
+    blocks.push({ type: "actions", elements });
+  }
+  return blocks;
+}
 
 const updateStatusUtil = async (
   initialStatus: string,
@@ -83,15 +169,55 @@ export async function handleNewAppMention(
         const refinementText = event.text?.replace(`<@${botUserId}>`, '').trim() || '';
         console.log("[DEBUG] User refinement text:", refinementText);
 
-        // TEST: Reply with extracted information
-        await client.chat.postMessage({
-          channel: channel,
-          thread_ts: rootTs,
-          text: `🔍 **Query Extraction Test**\n\nOriginal query: "${originalQuery}"\nYour refinement: "${refinementText}"\n\n_This is a test to confirm query extraction works. Full search refinement coming next!_`,
-        });
+        // Combine original query with refinement
+        const combinedQuery = combineQueries(originalQuery, refinementText);
+        console.log("[DEBUG] Combined query:", combinedQuery);
 
-        await updateMessage("Query extraction test completed");
-        return; // Exit early for testing
+        // Execute Amazon search with combined query
+        try {
+          const perPage = 5;
+          const page = 1;
+          const { products, pagination } = await amazonSearchTool.execute({
+            query: combinedQuery,
+            page,
+            perPage
+          });
+
+          if (!products.length) {
+            await client.chat.postMessage({
+              channel: channel,
+              thread_ts: rootTs,
+              text: `No products found for refined search: "${combinedQuery}"`
+            });
+            await updateMessage("No products found for refined search");
+            return;
+          }
+
+          const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+          const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, combinedQuery);
+
+          // Post results using blocks (same as /amazon command)
+          await client.chat.postMessage({
+            channel: channel,
+            thread_ts: rootTs,
+            text: `Refined Amazon search results for "${combinedQuery}":`,
+            blocks,
+            unfurl_links: false
+          });
+
+          await updateMessage("Refined search completed");
+          return;
+
+        } catch (err) {
+          console.error("[DEBUG] Error in refined Amazon search:", err);
+          await client.chat.postMessage({
+            channel: channel,
+            thread_ts: rootTs,
+            text: `Sorry, there was an error with your refined search. Please try again.`
+          });
+          await updateMessage("Error in refined search");
+          return;
+        }
       }
     }
 
