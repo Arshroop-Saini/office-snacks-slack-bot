@@ -64,7 +64,8 @@ export const generateResponse = async (
   }
 
   // Get search context (thread-scoped or recent)
-  const lastSearchQuery = (userId && channelId) ? getSearchContext(threadTs, channelId, userId) : undefined;
+  const searchContext = (userId && channelId) ? getSearchContext(threadTs, channelId, userId) : undefined;
+  const lastSearchQuery = searchContext?.query;
 
   // Get the last message for debugging and fallback detection
   const lastMessage = messages[messages.length - 1];
@@ -105,7 +106,7 @@ export const generateResponse = async (
     messages: messagesWithEmail,
     tools,
     maxSteps: 5,
-    system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail, searchQuery),
+    system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail, searchQuery, userId),
   });
 
   console.log("[AI] Finished generateText call. Response:", JSON.stringify(generateTextResponse, null, 2));
@@ -139,14 +140,30 @@ export const generateResponse = async (
             : amazonResult.result;
 
           const { products, query } = result;
-          const queryParam = (amazonCall.args as any)?.query || query || "unknown";
+          const queryParam = String((amazonCall.args as any)?.query || query || "unknown");
 
           if (products && Array.isArray(products) && products.length > 0) {
-            // Format as blocks using the shared utility
+            // Extract pagination info from the result
+            const pagination = result.pagination || {};
+            const currentPage = result.page || 1;
+
+            // Calculate total pages from SearchApi.io pagination
+            let totalPages = 1;
+            if (pagination.other_pages && typeof pagination.other_pages === 'object') {
+              const pageNumbers = Object.keys(pagination.other_pages).map(p => parseInt(p)).filter(p => !isNaN(p));
+              if (pageNumbers.length > 0) {
+                totalPages = Math.max(currentPage, ...pageNumbers);
+              }
+            }
+
+            // Limit to 5 products for consistent formatting
+            const displayProducts = products.slice(0, 5);
+
+            // Format as blocks using the shared utility with proper pagination
             blocks = formatProductBlocksStateless(
-              products as Product[],
-              1, // page
-              1, // totalPages (AI responses don't paginate)
+              displayProducts as Product[],
+              currentPage,
+              totalPages,
               queryParam
             );
           }
@@ -168,7 +185,7 @@ export const generateResponse = async (
   return responseObj;
 };
 
-const getSystemPrompt = (payerAddress: string, userEmail?: string, lastSearchQuery?: string) => {
+const getSystemPrompt = (payerAddress: string, userEmail?: string, lastSearchQuery?: string, userId?: string) => {
   let emailStep = `3. Once they specify the office, you already have the email address from Slack, this is the user's email address: ${userEmail}, so you can proceed to the next step.`;
   if (userEmail) {
     emailStep = `3. Once they specify the office, say: 'I found your email as ${userEmail} from Slack and will use it for your order.' Do not ask the user for their email or confirmation. Proceed to the next step.`;
@@ -208,10 +225,10 @@ When someone requests snacks or supplies FOR SEARCH ONLY:
 - Answer questions about products
 
 When someone wants to BUY/ORDER a specific product (they say "buy this", "order this", provide Amazon URL, or clearly indicate purchase intent):
-1. Use the get_office_addresses tool to show available office locations
-2. Ask which office location they want the items delivered to - show a list of the office locations${officeDisambiguation}
+1. Use the get_office_addresses tool with userId: "${userId || 'unknown'}" to automatically detect their timezone and suggest appropriate offices
+2. If the tool suggests one office, proceed with that office. If it suggests multiple offices (like NYC and Miami for Eastern timezone), ask the user to choose between them. If no office matches their timezone, show all available offices and ask them to choose.
 ${emailStep}
-4. Once you have both the office location and email address (which you already have from Slack), proceed with the purchase using that office's address
+3. Once you have both the office location and email address (which you already have from Slack), proceed with the purchase using that office's address
 
 For the purchase process:
 1. Use productLocator format 'amazon:B08SVZ775L'
