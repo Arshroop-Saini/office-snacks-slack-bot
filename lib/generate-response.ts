@@ -10,6 +10,12 @@ import { officeAddressesTool } from "./tools/office-addresses.tool";
 import { recommendedSnacksTool } from "./tools/recommended-snacks.tool";
 import { amazonSearchTool } from "./tools/amazon-search.tool";
 import { getSearchContext } from "./search-context";
+import { formatProductBlocksStateless, type Product } from "./amazon-block-formatter";
+
+type GenerateResponseResult = {
+  text: string;
+  blocks?: any[];
+};
 
 export const generateResponse = async (
   messages: CoreMessage[],
@@ -18,7 +24,7 @@ export const generateResponse = async (
   userId?: string,
   threadTs?: string,
   channelId?: string
-) => {
+): Promise<GenerateResponseResult> => {
   const payerKeypair = Keypair.fromSecretKey(
     bs58.decode(process.env.SOLANA_SECRET_KEY as string)
   );
@@ -73,10 +79,58 @@ export const generateResponse = async (
     JSON.stringify(generateTextResponse, null, 2)
   );
 
+  // Check if Amazon search tool was used
+  const amazonSearchStep = generateTextResponse.steps?.find(
+    (step) => step.toolCalls?.some((call) => call.toolName === "search_amazon_products")
+  );
+
+  if (amazonSearchStep) {
+    // Find the Amazon search tool call and its corresponding result
+    const amazonCallIndex = amazonSearchStep.toolCalls?.findIndex(
+      (call) => call.toolName === "search_amazon_products"
+    );
+
+    if (amazonCallIndex !== undefined && amazonCallIndex >= 0 && amazonSearchStep.toolResults) {
+      const amazonCall = amazonSearchStep.toolCalls?.[amazonCallIndex];
+      const amazonResult = amazonSearchStep.toolResults[amazonCallIndex];
+
+      if (amazonCall && amazonResult) {
+        try {
+          // Extract search query and products from the tool result
+          const result = typeof amazonResult.result === 'string'
+            ? JSON.parse(amazonResult.result)
+            : amazonResult.result;
+
+          const { products, query } = result;
+          const queryParam = (amazonCall.args as any)?.query || query || "unknown";
+
+          if (products && Array.isArray(products) && products.length > 0) {
+            // Format as blocks using the shared utility
+            const blocks = formatProductBlocksStateless(
+              products as Product[],
+              1, // page
+              1, // totalPages (AI responses don't paginate)
+              queryParam
+            );
+
+            return {
+              text: `Here are some options for ${queryParam}:`,
+              blocks
+            };
+          }
+        } catch (err) {
+          console.error("Error parsing Amazon search result:", err);
+        }
+      }
+    }
+  }
+
   const text = generateTextResponse.text || "Failed to generate response";
 
   // Convert markdown to Slack mrkdwn format
-  return text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*");
+  return {
+    text: text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*")
+  };
 };
 
 const getSystemPrompt = (payerAddress: string, userEmail?: string, lastSearchQuery?: string) => {

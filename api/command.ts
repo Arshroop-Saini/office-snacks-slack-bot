@@ -2,19 +2,8 @@ import { amazonSearchTool } from "../lib/tools/amazon-search.tool";
 import { generateResponse } from "../lib/generate-response";
 import { client } from "../lib/slack-utils";
 import { storeRecentSearch, storeThreadSearch } from "../lib/search-context";
+import { formatProductBlocksStateless, getPaginationElements, type Product } from "../lib/amazon-block-formatter";
 import type { CoreMessage } from "ai";
-
-type Product = {
-    title: string;
-    url: string;
-    image?: string;
-    price?: string;
-    currency?: string;
-    rating?: number;
-    ratings_total?: number;
-    eta?: string;
-    description?: string;
-};
 
 export const maxDuration = 60;
 const MAX_PRODUCTS = 20; // Reduce for Slack payload safety
@@ -41,71 +30,6 @@ function paginateProducts(products: Product[], page: number, perPage: number) {
         pageProducts: products.slice(start, end),
         totalPages,
     };
-}
-
-// Helper to generate pagination buttons with optional disabled state
-function getPaginationElements(query: string, page: number, totalPages: number, loading: boolean = false) {
-    const elements = [];
-    if (page > 1) {
-        elements.push({
-            type: "button",
-            text: { type: "plain_text", text: "Back" },
-            value: JSON.stringify({ query, page: page - 1 }),
-            action_id: "back_page",
-            ...(loading ? { style: "danger", disabled: true } : {})
-        });
-    }
-    if (page < totalPages) {
-        elements.push({
-            type: "button",
-            text: { type: "plain_text", text: "Next" },
-            value: JSON.stringify({ query, page: page + 1 }),
-            action_id: "next_page",
-            ...(loading ? { style: "danger", disabled: true } : {})
-        });
-    }
-    return elements;
-}
-
-function formatProductBlocksStateless(products: Product[], page: number, totalPages: number, query: string, loading: boolean = false) {
-    const blocks = [];
-    // Header
-    blocks.push({
-        type: "section",
-        text: {
-            type: "mrkdwn",
-            text: `*Amazon Results for:* \`${query}\`  |  *Page:* ${page} of ${totalPages}`,
-        },
-    });
-    // Products
-    if (products.length === 0) {
-        blocks.push({
-            type: "section",
-            text: { type: "mrkdwn", text: ":warning: No products found for this page." },
-        });
-    } else {
-        for (const product of products) {
-            blocks.push({
-                type: "section",
-                text: {
-                    type: "mrkdwn",
-                    text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}`,
-                },
-                accessory: product.image ? {
-                    type: "image",
-                    image_url: product.image,
-                    alt_text: product.title,
-                } : undefined,
-            });
-            blocks.push({ type: "divider" });
-        }
-    }
-    // Pagination controls
-    const elements = getPaginationElements(query, page, totalPages, loading);
-    if (elements.length > 0) {
-        blocks.push({ type: "actions", elements });
-    }
-    return blocks;
 }
 
 export async function POST(request: Request) {

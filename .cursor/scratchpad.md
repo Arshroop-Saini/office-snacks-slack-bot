@@ -27,40 +27,52 @@ Allow users to refine Amazon searches conversationally after using `/amazon` sla
 - [x] **Task 2**: Store query in `/amazon` command after success ✅ Complete  
 - [x] **Task 3**: Add amazonSearchTool to app mention handler ✅ Complete
 - [x] **Task 4**: Update AI prompt to include last search context ✅ Complete
-- [x] **Task 5**: Implementation complete - Ready for testing ✅ Complete
+- [x] **Task 5**: Adapt for thread-scoped context (BETTER UX) ✅ Complete
 
 ## Current Status / Progress Tracking
-- **Task 1**: ✅ Created `lib/search-context.ts` with simple Map storage and helper functions
+- **Task 1**: ✅ Created `lib/search-context.ts` with hybrid storage system
+  - Recent searches: Map<channelId-userId, {query, timestamp}> (10min expiry)
+  - Thread searches: Map<threadTs, query> (permanent until replaced)
+  - Smart `getSearchContext()` that checks thread first, then recent searches
 - **Task 2**: ✅ Modified `api/command.ts` to store search queries after successful Amazon searches
-  - Added storage to slash command response
-  - Added storage to pagination responses (both form data and JSON payload)
+  - Initial slash command: stores as recent search (before thread exists)
+  - Pagination: maintains recent search context
   - All existing functionality preserved
 - **Task 3**: ✅ Added amazonSearchTool to app mention handler
   - Added amazonSearchTool import to `lib/generate-response.ts`
   - Added search_amazon_products to available tools
-  - Added userId parameter to generateResponse function
-  - Added search context retrieval and passed to system prompt
+  - Added threadTs and channelId parameters to generateResponse function
   - Updated call sites in handle-app-mention.ts and handle-messages.ts
 - **Task 4**: ✅ Updated AI system prompt to include search context
   - Added conditional search context prompt that activates when user has recent search
   - AI instructed to use search_amazon_products tool for refinements
   - Falls back to normal conversation when not search-related
-- **Task 5**: ✅ Build successful, implementation complete
+- **Task 5**: ✅ Adapted for thread-scoped context (IMPROVED UX)
+  - Context only applies when user replies in the thread of search results
+  - Prevents confusion from cross-channel or unrelated conversations
+  - Automatic promotion from recent → thread-specific when thread is created
+  - Build successful, no compilation errors
 
-## ✅ FEATURE COMPLETE - Ready for Testing
+## ✅ THREAD-SCOPED FEATURE COMPLETE - Ready for Testing
+
+### Enhanced User Flow:
+1. User: `/amazon sparkling water` in channel
+2. Bot: Posts search results message
+3. User: **Replies in thread** → `@snack_bot I want non-flavored ones`
+4. Bot: Searches Amazon for "sparkling water non-flavored" and shows results **in same thread**
 
 ### To Test the Feature:
 1. Deploy the bot (existing deployment process)
-2. Test flow: `/amazon sparkling water` → wait for results → `@snack_bot I want non-flavored`
-3. Verify refined search results appear
-4. Test normal conversations still work: `@snack_bot hello`
+2. Test flow: `/amazon sparkling water` → **reply in thread** → `@snack_bot I want non-flavored`
+3. Verify refined search results appear in the thread
+4. Test normal conversations still work: `@snack_bot hello` in different context
 
 ### Success Criteria Met:
 - ✅ All changes are additive (no existing functionality broken)
-- ✅ Simple storage system implemented
+- ✅ Thread-scoped storage system implemented (much better UX)
 - ✅ Search context stored after `/amazon` commands
 - ✅ AI has access to amazonSearchTool in app mentions
-- ✅ Search context included in AI prompts
+- ✅ Search context included in AI prompts when in relevant thread
 - ✅ TypeScript compilation successful
 
-**Ready for deployment and testing!**
+**Ready for deployment and testing! Thread-scoped approach is much cleaner.**

@@ -1,12 +1,9 @@
 export const maxDuration = 60; // Set maximum duration to 60 seconds
 
 import type { SlackEvent } from "@slack/web-api";
-import {
-  assistantThreadMessage,
-  handleNewAssistantMessage,
-} from "../lib/handle-messages";
+import { handleMessages } from "../lib/handle-messages";
 import { waitUntil } from "@vercel/functions";
-import { handleNewAppMention } from "../lib/handle-app-mention";
+import { handleAppMention } from "../lib/handle-app-mention";
 import { verifyRequest, getBotId } from "../lib/slack-utils";
 
 export async function POST(request: Request) {
@@ -37,11 +34,7 @@ export async function POST(request: Request) {
     });
 
     if (event.type === "app_mention") {
-      waitUntil(handleNewAppMention(event, botUserId));
-    }
-
-    if (event.type === "assistant_thread_started") {
-      waitUntil(assistantThreadMessage(event));
+      waitUntil(handleAppMention(event));
     }
 
     if (
@@ -52,7 +45,7 @@ export async function POST(request: Request) {
       !event.bot_profile &&
       event.bot_id !== botUserId
     ) {
-      waitUntil(handleNewAssistantMessage(event, botUserId));
+      waitUntil(handleMessages(event));
     }
 
     return new Response("Success!", { status: 200 });
