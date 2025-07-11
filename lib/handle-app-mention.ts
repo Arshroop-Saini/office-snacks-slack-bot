@@ -69,14 +69,14 @@ export async function handleNewAppMention(
     const botResponseMessage = threadMessages.find(msg =>
       msg.role === 'assistant' &&
       typeof msg.content === 'string' &&
-      msg.content.includes('Amazon Results for: ')
+      msg.content.includes('Amazon search results for')
     );
 
     if (botResponseMessage && typeof botResponseMessage.content === 'string') {
       console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
-      const match = botResponseMessage.content.match(/Amazon Results for: (.+)/);
+      const match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
       if (match) {
-        const originalQuery = match[1].split('|')[0].trim(); // Handle pagination format
+        const originalQuery = match[1].trim(); // Extract from quotes
         console.log("[DEBUG] Extracted original query:", originalQuery);
 
         // Extract refinement text from user's mention
@@ -90,7 +90,7 @@ export async function handleNewAppMention(
           text: `🔍 **Query Extraction Test**\n\nOriginal query: "${originalQuery}"\nYour refinement: "${refinementText}"\n\n_This is a test to confirm query extraction works. Full search refinement coming next!_`,
         });
 
-        await updateMessage("");
+        await updateMessage("Query extraction test completed");
         return; // Exit early for testing
       }
     }
