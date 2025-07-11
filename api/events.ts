@@ -5,6 +5,9 @@ import { handleMessages } from "../lib/handle-messages";
 import { waitUntil } from "@vercel/functions";
 import { handleAppMention } from "../lib/handle-app-mention";
 import { verifyRequest, getBotId } from "../lib/slack-utils";
+import { updateThreadPage, storeThreadSearch, getSearchContext } from "../lib/search-context";
+import { amazonSearchTool } from "../lib/tools/amazon-search.tool";
+import { formatProductBlocksStateless } from "../lib/amazon-block-formatter";
 
 export async function POST(request: Request) {
   const rawBody = await request.text();
@@ -46,6 +49,45 @@ export async function POST(request: Request) {
       event.bot_id !== botUserId
     ) {
       waitUntil(handleMessages(event));
+    }
+
+    // Block action handler for thread pagination
+    if (payload.type === "block_actions") {
+      const action = payload.actions[0];
+      let parsedValue;
+      try {
+        parsedValue = JSON.parse(action.value);
+      } catch (err) {
+        return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (action.action_id === "next_page" || action.action_id === "back_page") {
+        // Extract context from the payload
+        const { query, page } = parsedValue;
+        const perPage = 5;
+        // If this is in a thread, update the thread context
+        const threadTs = payload.message?.thread_ts || payload.message?.ts;
+        if (threadTs) {
+          storeThreadSearch(threadTs, query, page);
+        }
+        // Run the Amazon search for this page
+        const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
+        const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+        const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
+        // Respond to Slack
+        await fetch(payload.response_url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            response_type: "in_channel",
+            replace_original: true,
+            blocks,
+          }),
+        });
+        return new Response("", { status: 200 });
+      }
     }
 
     return new Response("Success!", { status: 200 });

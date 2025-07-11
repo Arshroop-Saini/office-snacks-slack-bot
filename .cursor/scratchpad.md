@@ -9,70 +9,74 @@ Allow users to refine Amazon searches conversationally after using `/amazon` sla
 3. User: `@snack_bot I was looking for non-flavored ones`
 4. Bot: Searches Amazon for "sparkling water non-flavored" and shows results
 
-## Implementation Plan
+## ✅ PHASE 1 COMPLETE: Thread-Scoped Conversational Search
+The basic conversational search enhancement is **WORKING** ✅
 
-### Simple Approach
-- Store last search query per user (no expiration)
-- Let AI decide when to use search context vs normal conversation
-- Reuse existing `amazonSearchTool` and UI blocks
+## 🚨 CRITICAL ISSUE: Follow-up Queries Broken
+**Problem**: Search context storage is empty, AI timeouts, slow responses
+**Root Cause**: 
+- Search context not being stored/retrieved properly
+- AI taking 60+ seconds and timing out
+- Over-engineered approach with AI tools
 
-### Files to Modify
-1. `lib/search-context.ts` - Simple storage for last search queries
-2. `api/command.ts` - Store query after successful Amazon search
-3. `lib/generate-response.ts` - Add amazonSearchTool to app mentions
-4. `lib/generate-response.ts` - Update system prompt with search context
+**NEW APPROACH**: Make follow-up queries work exactly like `/amazon` command
+- Fast, instant results
+- Reuse exact same formatting and pagination
+- Simple context storage and retrieval
+- No AI delays, direct Amazon API call
 
-### Tasks
-- [x] **Task 1**: Create simple search context storage ✅ Complete
-- [x] **Task 2**: Store query in `/amazon` command after success ✅ Complete  
-- [x] **Task 3**: Add amazonSearchTool to app mention handler ✅ Complete
-- [x] **Task 4**: Update AI prompt to include last search context ✅ Complete
-- [x] **Task 5**: Adapt for thread-scoped context (BETTER UX) ✅ Complete
+## 🔧 PHASE 2: URGENT FIXES
 
-## Current Status / Progress Tracking
-- **Task 1**: ✅ Created `lib/search-context.ts` with hybrid storage system
-  - Recent searches: Map<channelId-userId, {query, timestamp}> (10min expiry)
-  - Thread searches: Map<threadTs, query> (permanent until replaced)
-  - Smart `getSearchContext()` that checks thread first, then recent searches
-- **Task 2**: ✅ Modified `api/command.ts` to store search queries after successful Amazon searches
-  - Initial slash command: stores as recent search (before thread exists)
-  - Pagination: maintains recent search context
-  - All existing functionality preserved
-- **Task 3**: ✅ Added amazonSearchTool to app mention handler
-  - Added amazonSearchTool import to `lib/generate-response.ts`
-  - Added search_amazon_products to available tools
-  - Added threadTs and channelId parameters to generateResponse function
-  - Updated call sites in handle-app-mention.ts and handle-messages.ts
-- **Task 4**: ✅ Updated AI system prompt to include search context
-  - Added conditional search context prompt that activates when user has recent search
-  - AI instructed to use search_amazon_products tool for refinements
-  - Falls back to normal conversation when not search-related
-- **Task 5**: ✅ Adapted for thread-scoped context (IMPROVED UX)
-  - Context only applies when user replies in the thread of search results
-  - Prevents confusion from cross-channel or unrelated conversations
-  - Automatic promotion from recent → thread-specific when thread is created
-  - Build successful, no compilation errors
+### Current Status / Progress Tracking
+**CRITICAL TASK**: Fix follow-up search to be instant like `/amazon` command
+- Status: ✅ COMPLETED
+- Goal: Instant results, exact same format as slash command
+- Approach: Bypass AI, direct Amazon API call with enhanced query
 
-## ✅ THREAD-SCOPED FEATURE COMPLETE - Ready for Testing
+### High-level Task Breakdown
+1. **[COMPLETED] ✅ Fix search context storage and retrieval**
+   - ✅ Added thread message scanning as fallback when storage is empty
+   - ✅ Implemented `findOriginalSearchInThread()` to parse bot messages
+   - ✅ Handles both text patterns and block JSON for search queries
+   - ✅ Robust fallback system: storage first, then thread scan
 
-### Enhanced User Flow:
-1. User: `/amazon sparkling water` in channel
-2. Bot: Posts search results message
-3. User: **Replies in thread** → `@snack_bot I want non-flavored ones`
-4. Bot: Searches Amazon for "sparkling water non-flavored" and shows results **in same thread**
+2. **[COMPLETED] ✅ Create fast follow-up search handler**
+   - ✅ Added `handleFollowUpSearch()` function that bypasses AI completely
+   - ✅ Combines original query + user refinement (e.g., "phone cases" + "black")
+   - ✅ Calls Amazon API directly using existing `amazonSearchTool`
+   - ✅ Uses exact same formatting as `/amazon` command with `formatProductBlocksStateless`
+   - ✅ Fast path for thread mentions, falls back to AI for non-search conversations
 
-### To Test the Feature:
-1. Deploy the bot (existing deployment process)
-2. Test flow: `/amazon sparkling water` → **reply in thread** → `@snack_bot I want non-flavored`
-3. Verify refined search results appear in the thread
-4. Test normal conversations still work: `@snack_bot hello` in different context
+3. **[PENDING] Fix buying flow after search works**
+   - Only after search is working perfectly
 
-### Success Criteria Met:
-- ✅ All changes are additive (no existing functionality broken)
-- ✅ Thread-scoped storage system implemented (much better UX)
-- ✅ Search context stored after `/amazon` commands
-- ✅ AI has access to amazonSearchTool in app mentions
-- ✅ Search context included in AI prompts when in relevant thread
-- ✅ TypeScript compilation successful
+### Solution Architecture
+**FAST PATH** (Follow-up searches in threads):
+1. User mentions bot in thread of Amazon search results
+2. Check storage for search context (may be empty due to Vercel stateless functions)
+3. If empty, scan thread messages to find original search query
+4. Combine original query + user message → enhanced query
+5. Call Amazon API directly (bypass AI) → instant results
+6. Format using exact same blocks as `/amazon` command
 
-**Ready for deployment and testing! Thread-scoped approach is much cleaner.**
+**SLOW PATH** (Normal conversations, buying):
+1. Fall back to AI system for non-search conversations
+2. Handle buying flows, general questions, etc.
+
+### Executor's Feedback or Assistance Requests
+**READY FOR TESTING**: ✅ Fast follow-up search implementation complete
+
+**Key Features**:
+- ⚡ **Instant results**: Bypasses AI completely for follow-up searches
+- 🔄 **Exact same format**: Reuses `/amazon` command formatting and pagination
+- 🧠 **Smart context detection**: Storage + thread message scanning fallback
+- 🎯 **Thread-scoped**: Only works in threads of search results (as requested)
+- 🛡️ **Graceful fallback**: Falls back to AI for non-search conversations
+
+**Expected Behavior**:
+1. `/amazon phone cases` → Shows search results
+2. User replies in thread: `@snack_bot I want black ones`
+3. Bot instantly shows "Amazon search results for 'phone cases black'" with same format
+4. No AI delays, no timeouts, instant response
+
+**Next**: Test the follow-up search functionality, then fix buying flow if needed
