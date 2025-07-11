@@ -66,6 +66,14 @@ export const generateResponse = async (
   // Get search context (thread-scoped or recent)
   const lastSearchQuery = (userId && channelId) ? getSearchContext(threadTs, channelId, userId) : undefined;
 
+  console.log(`🔍 [SEARCH_CONTEXT] Debug info:`, {
+    userId,
+    channelId,
+    threadTs,
+    lastSearchQuery,
+    userMessage: messages[messages.length - 1]?.content
+  });
+
   const generateTextResponse = await generateText({
     model: openai("gpt-4o"),
     messages: messagesWithEmail,
@@ -144,12 +152,32 @@ const getSystemPrompt = (payerAddress: string, userEmail?: string, lastSearchQue
   // Add search context information
   const searchContext = lastSearchQuery ? `
 
-SEARCH CONTEXT: The user recently searched for "${lastSearchQuery}" on Amazon. If their current message seems related to refining or clarifying this search, use the search_amazon_products tool to search with a combined query (e.g., "${lastSearchQuery}" + their refinement). Otherwise, proceed with normal conversation.` : '';
+🔍 CRITICAL SEARCH CONTEXT: The user recently searched for "${lastSearchQuery}" on Amazon. 
+
+IMPORTANT: If the user mentions ANYTHING related to products, items, colors, specifications, features, brands, or modifications to their search - you MUST use the search_amazon_products tool with a combined query.
+
+Examples that should trigger Amazon search:
+- "I want black ones" → search for "${lastSearchQuery} black"
+- "looking for something cheaper" → search for "${lastSearchQuery} cheap"  
+- "I need wireless" → search for "${lastSearchQuery} wireless"
+- "what about red cases" → search for "${lastSearchQuery} red cases"
+
+Do NOT ask for office location or start ordering process unless they explicitly say they want to order a specific product.` : '';
 
   return `
 You are a friendly and helpful Office Snacks Assistant. Your name is SnackBot. Your job is to help team members order snacks and supplies for their office location.${searchContext}
 
-When someone requests snacks or supplies:
+IMPORTANT FLOW RULES:
+1. Only start the ordering process when users explicitly say they want to BUY/ORDER a specific product (with Amazon URL or clear product selection)
+2. For search refinements, modifications, or general product questions - use search_amazon_products tool to show more results
+3. Do NOT ask for office location unless they're ready to make a purchase
+
+When someone requests snacks or supplies FOR SEARCH ONLY:
+- Use search_amazon_products tool to find and show products
+- Help them refine searches with different queries
+- Answer questions about products
+
+When someone wants to BUY/ORDER a specific product (they say "buy this", "order this", provide Amazon URL, or clearly indicate purchase intent):
 1. Use the get_office_addresses tool to show available office locations
 2. Ask which office location they want the items delivered to - show a list of the office locations${officeDisambiguation}
 ${emailStep}
