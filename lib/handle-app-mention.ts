@@ -16,7 +16,7 @@ async function findOriginalSearchInThread(channelId: string, threadTs: string): 
     const result = await client.conversations.replies({
       channel: channelId,
       ts: threadTs,
-      limit: 10 // Only check recent messages
+      limit: 20 // Increase limit to catch more messages
     });
 
     if (!result.messages) {
@@ -24,23 +24,51 @@ async function findOriginalSearchInThread(channelId: string, threadTs: string): 
       return undefined;
     }
 
-    // Look for bot messages with Amazon search results
-    for (const message of result.messages) {
-      if (message.bot_id) {
-        const text = message.text || '';
+    console.log(`[THREAD_SCAN] 📋 Found ${result.messages.length} messages in thread`);
 
-        // Check for "Amazon search results for" pattern
-        const searchMatch = text.match(/Amazon search results for "([^"]+)"/);
-        if (searchMatch) {
-          const originalQuery = searchMatch[1];
-          console.log(`[THREAD_SCAN] ✅ Found original search: "${originalQuery}"`);
-          return originalQuery;
-        }
+    // Look through ALL messages (not just bot messages)
+    for (let i = 0; i < result.messages.length; i++) {
+      const message = result.messages[i];
+      console.log(`[THREAD_SCAN] 📝 Message ${i}:`, {
+        bot_id: message.bot_id,
+        user: message.user,
+        text: message.text?.substring(0, 100) + '...',
+        hasBlocks: !!message.blocks,
+        blocksCount: message.blocks?.length || 0
+      });
 
-        // Also check blocks for search query
-        if (message.blocks) {
-          const blocksText = JSON.stringify(message.blocks);
-          const blockSearchMatch = blocksText.match(/"query":"([^"]+)"/);
+      const text = message.text || '';
+
+      // Pattern 1: Look for "Amazon search results for" in ANY message
+      const searchMatch = text.match(/Amazon search results for "([^"]+)"/);
+      if (searchMatch) {
+        const originalQuery = searchMatch[1];
+        console.log(`[THREAD_SCAN] ✅ Found original search in text: "${originalQuery}"`);
+        return originalQuery;
+      }
+
+      // Pattern 2: Look for slash command usage "/amazon query"
+      const slashMatch = text.match(/\/amazon\s+(.+)/);
+      if (slashMatch) {
+        const originalQuery = slashMatch[1].trim();
+        console.log(`[THREAD_SCAN] ✅ Found slash command: "${originalQuery}"`);
+        return originalQuery;
+      }
+
+      // Pattern 3: Check blocks for search query (in buttons/actions)
+      if (message.blocks) {
+        const blocksText = JSON.stringify(message.blocks);
+        console.log(`[THREAD_SCAN] 🔍 Checking blocks:`, blocksText.substring(0, 200) + '...');
+
+        // Look for query in button values or action values
+        const patterns = [
+          /"query":"([^"]+)"/,
+          /"value":"[^"]*query[^"]*:([^"]+)"/,
+          /"text":"Amazon search results for ([^"]+)"/
+        ];
+
+        for (const pattern of patterns) {
+          const blockSearchMatch = blocksText.match(pattern);
           if (blockSearchMatch) {
             const originalQuery = blockSearchMatch[1];
             console.log(`[THREAD_SCAN] ✅ Found original search in blocks: "${originalQuery}"`);
@@ -50,7 +78,7 @@ async function findOriginalSearchInThread(channelId: string, threadTs: string): 
       }
     }
 
-    console.log(`[THREAD_SCAN] ❌ No Amazon search found in thread`);
+    console.log(`[THREAD_SCAN] ❌ No Amazon search found in ${result.messages.length} messages`);
     return undefined;
 
   } catch (error) {
@@ -110,6 +138,33 @@ async function handleFollowUpSearch(
   }
 }
 
+/**
+ * Smart fallback to detect search intent without thread context
+ */
+function detectSearchIntent(userMessage: string): string | undefined {
+  const msg = userMessage.toLowerCase();
+
+  // Common patterns for product refinements
+  const patterns = [
+    { keywords: ['black', 'white', 'red', 'blue', 'green', 'yellow', 'pink', 'purple', 'orange', 'gray', 'grey', 'silver', 'gold'], base: 'phone cases' },
+    { keywords: ['case', 'cases', 'cover', 'covers'], base: 'phone cases' },
+    { keywords: ['headphone', 'headphones', 'earphone', 'earphones', 'earbuds'], base: 'headphones' },
+    { keywords: ['water', 'bottle', 'bottles'], base: 'water bottles' },
+    { keywords: ['snack', 'snacks', 'food'], base: 'snacks' },
+    { keywords: ['charger', 'charging', 'cable'], base: 'phone chargers' },
+    { keywords: ['laptop', 'computer'], base: 'laptop accessories' },
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.keywords.some(keyword => msg.includes(keyword))) {
+      console.log(`[SMART_FALLBACK] 🎯 Detected "${pattern.base}" from message: "${userMessage}"`);
+      return pattern.base;
+    }
+  }
+
+  return undefined;
+}
+
 export const handleAppMention = async (
   event: AppMentionEvent,
   updateStatus?: (status: string) => void
@@ -122,13 +177,21 @@ export const handleAppMention = async (
     if (event.thread_ts && event.user) {
       let searchContext = getSearchContext(event.thread_ts, event.channel, event.user);
 
-      // If no context in storage, scan thread messages for original search
+      // If no context in storage, try multiple fallback methods
       if (!searchContext) {
-        console.log(`[FOLLOW_UP] 🔍 No storage context, scanning thread messages...`);
-        const originalQuery = await findOriginalSearchInThread(event.channel, event.thread_ts);
+        console.log(`[FOLLOW_UP] 🔍 No storage context, trying fallback methods...`);
+
+        // Method 1: Scan thread messages for original search
+        let originalQuery = await findOriginalSearchInThread(event.channel, event.thread_ts);
+
+        // Method 2: Smart pattern detection if thread scan fails
+        if (!originalQuery) {
+          originalQuery = detectSearchIntent(userMessage);
+        }
+
         if (originalQuery) {
           searchContext = { query: originalQuery, page: 1 };
-          console.log(`[FOLLOW_UP] 🎯 Found search context via thread scan: "${originalQuery}"`);
+          console.log(`[FOLLOW_UP] 🎯 Found search context via fallback: "${originalQuery}"`);
         }
       }
 

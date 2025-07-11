@@ -5,6 +5,9 @@ const threadSearchQueries = new Map<string, { query: string, page: number }>();
 // Temporary storage for recent searches before thread is created
 const recentSearches = new Map<string, { query: string, timestamp: number }>();
 
+// Global cache for better persistence (survives longer in Vercel)
+const globalSearchCache = new Map<string, { query: string, timestamp: number }>();
+
 /**
  * Store a recent search for a user in a channel (before thread is created)
  * @param channelId - The Slack channel ID
@@ -13,11 +16,17 @@ const recentSearches = new Map<string, { query: string, timestamp: number }>();
  */
 export function storeRecentSearch(channelId: string, userId: string, query: string): void {
     const key = `${channelId}-${userId}`;
-    recentSearches.set(key, { query, timestamp: Date.now() });
+    const timestamp = Date.now();
+
+    // Store in both local and global cache
+    recentSearches.set(key, { query, timestamp });
+    globalSearchCache.set(key, { query, timestamp });
+
     console.log(`[SEARCH_CONTEXT] ✅ Stored recent search for ${key}: "${query}"`);
     console.log(`[SEARCH_CONTEXT] 📊 Storage state:`, {
         recentSearches: Array.from(recentSearches.entries()),
-        threadSearches: Array.from(threadSearchQueries.entries())
+        threadSearches: Array.from(threadSearchQueries.entries()),
+        globalCache: Array.from(globalSearchCache.entries())
     });
 }
 
@@ -29,10 +38,15 @@ export function storeRecentSearch(channelId: string, userId: string, query: stri
  */
 export function storeThreadSearch(threadTs: string, query: string, page: number = 1): void {
     threadSearchQueries.set(threadTs, { query, page });
+
+    // Also store in global cache with thread key
+    globalSearchCache.set(`thread-${threadTs}`, { query, timestamp: Date.now() });
+
     console.log(`[SEARCH_CONTEXT] ✅ Stored thread search for ${threadTs}: "${query}" (page ${page})`);
     console.log(`[SEARCH_CONTEXT] 📊 Storage state:`, {
         recentSearches: Array.from(recentSearches.entries()),
-        threadSearches: Array.from(threadSearchQueries.entries())
+        threadSearches: Array.from(threadSearchQueries.entries()),
+        globalCache: Array.from(globalSearchCache.entries())
     });
 }
 
@@ -49,7 +63,8 @@ export function getSearchContext(threadTs: string | undefined, channelId: string
         channelId,
         userId,
         recentSearches: Array.from(recentSearches.entries()),
-        threadSearches: Array.from(threadSearchQueries.entries())
+        threadSearches: Array.from(threadSearchQueries.entries()),
+        globalCache: Array.from(globalSearchCache.entries())
     });
 
     // First check if we have thread-specific context
@@ -87,6 +102,23 @@ export function getSearchContext(threadTs: string | undefined, channelId: string
         console.log(`[SEARCH_CONTEXT] ❌ No recent search found for ${key}`);
     }
 
+    // ENHANCED: Check global cache for better persistence
+    console.log(`[SEARCH_CONTEXT] 🔄 Checking global cache...`);
+    const globalKey = `${channelId}-${userId}`;
+    const globalData = globalSearchCache.get(globalKey);
+    if (globalData && (Date.now() - globalData.timestamp < 30 * 60 * 1000)) { // 30 min expiry
+        console.log(`[SEARCH_CONTEXT] 🔄 Found in global cache: ${globalKey} -> "${globalData.query}"`);
+
+        // If we're in a thread, promote this to thread-specific storage
+        if (threadTs) {
+            console.log(`[SEARCH_CONTEXT] 🔄 Promoting global cache to thread ${threadTs}`);
+            storeThreadSearch(threadTs, globalData.query, 1);
+            return { query: globalData.query, page: 1 };
+        }
+
+        return { query: globalData.query, page: 1 };
+    }
+
     // ENHANCED: Check if we can find a recent search for ANY user in this channel (fallback)
     console.log(`[SEARCH_CONTEXT] 🔄 Checking for any recent searches in channel ${channelId}...`);
     for (const [searchKey, searchData] of recentSearches.entries()) {
@@ -96,6 +128,23 @@ export function getSearchContext(threadTs: string | undefined, channelId: string
             // If we're in a thread, promote this to thread-specific storage
             if (threadTs) {
                 console.log(`[SEARCH_CONTEXT] 🔄 Promoting channel fallback to thread ${threadTs}`);
+                storeThreadSearch(threadTs, searchData.query, 1);
+                return { query: searchData.query, page: 1 };
+            }
+
+            return { query: searchData.query, page: 1 };
+        }
+    }
+
+    // ENHANCED: Check global cache for any channel searches
+    console.log(`[SEARCH_CONTEXT] 🔄 Checking global cache for channel searches...`);
+    for (const [searchKey, searchData] of globalSearchCache.entries()) {
+        if (searchKey.startsWith(`${channelId}-`) && (Date.now() - searchData.timestamp < 30 * 60 * 1000)) {
+            console.log(`[SEARCH_CONTEXT] 🔄 Found global channel search: ${searchKey} -> "${searchData.query}"`);
+
+            // If we're in a thread, promote this to thread-specific storage
+            if (threadTs) {
+                console.log(`[SEARCH_CONTEXT] 🔄 Promoting global channel search to thread ${threadTs}`);
                 storeThreadSearch(threadTs, searchData.query, 1);
                 return { query: searchData.query, page: 1 };
             }
@@ -123,5 +172,5 @@ export function updateThreadPage(threadTs: string, page: number): void {
  * Get current storage size (for debugging)
  */
 export function getStorageSize(): number {
-    return threadSearchQueries.size + recentSearches.size;
+    return threadSearchQueries.size + recentSearches.size + globalSearchCache.size;
 } 
