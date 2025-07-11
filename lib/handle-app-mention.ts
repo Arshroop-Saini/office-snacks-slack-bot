@@ -1,260 +1,219 @@
+import { AppMentionEvent } from "@slack/web-api";
+import { client, getThread, getUserEmail, getUserProfile, getOfficeForTimezone } from "./slack-utils";
 import { generateResponse } from "./generate-response";
-import { client } from "./slack-utils";
-import { getSearchContext } from "./search-context";
-import { amazonSearchTool } from "./tools/amazon-search.tool";
-import { formatProductBlocksStateless } from "./amazon-block-formatter";
-import type { AppMentionEvent } from "@slack/web-api";
 
-/**
- * Scan thread messages to find original Amazon search query
- */
-async function findOriginalSearchInThread(channelId: string, threadTs: string): Promise<string | undefined> {
-  try {
-    console.log(`[THREAD_SCAN] 🔍 Scanning thread ${threadTs} for original search...`);
-
-    // Get thread messages
-    const result = await client.conversations.replies({
-      channel: channelId,
-      ts: threadTs,
-      limit: 20 // Increase limit to catch more messages
-    });
-
-    if (!result.messages) {
-      console.log(`[THREAD_SCAN] ❌ No messages found in thread`);
-      return undefined;
-    }
-
-    console.log(`[THREAD_SCAN] 📋 Found ${result.messages.length} messages in thread`);
-
-    // Look through ALL messages (not just bot messages)
-    for (let i = 0; i < result.messages.length; i++) {
-      const message = result.messages[i];
-      console.log(`[THREAD_SCAN] 📝 Message ${i}:`, {
-        bot_id: message.bot_id,
-        user: message.user,
-        text: message.text?.substring(0, 100) + '...',
-        hasBlocks: !!message.blocks,
-        blocksCount: message.blocks?.length || 0
-      });
-
-      const text = message.text || '';
-
-      // Pattern 1: Look for "Amazon search results for" in ANY message
-      const searchMatch = text.match(/Amazon search results for "([^"]+)"/);
-      if (searchMatch) {
-        const originalQuery = searchMatch[1];
-        console.log(`[THREAD_SCAN] ✅ Found original search in text: "${originalQuery}"`);
-        return originalQuery;
-      }
-
-      // Pattern 2: Look for slash command usage "/amazon query"
-      const slashMatch = text.match(/\/amazon\s+(.+)/);
-      if (slashMatch) {
-        const originalQuery = slashMatch[1].trim();
-        console.log(`[THREAD_SCAN] ✅ Found slash command: "${originalQuery}"`);
-        return originalQuery;
-      }
-
-      // Pattern 3: Check blocks for search query (in buttons/actions)
-      if (message.blocks) {
-        const blocksText = JSON.stringify(message.blocks);
-        console.log(`[THREAD_SCAN] 🔍 Checking blocks:`, blocksText.substring(0, 200) + '...');
-
-        // Look for query in button values or action values
-        const patterns = [
-          /"query":"([^"]+)"/,
-          /"value":"[^"]*query[^"]*:([^"]+)"/,
-          /"text":"Amazon search results for ([^"]+)"/
-        ];
-
-        for (const pattern of patterns) {
-          const blockSearchMatch = blocksText.match(pattern);
-          if (blockSearchMatch) {
-            const originalQuery = blockSearchMatch[1];
-            console.log(`[THREAD_SCAN] ✅ Found original search in blocks: "${originalQuery}"`);
-            return originalQuery;
-          }
-        }
-      }
-    }
-
-    console.log(`[THREAD_SCAN] ❌ No Amazon search found in ${result.messages.length} messages`);
-    return undefined;
-
-  } catch (error) {
-    console.error(`[THREAD_SCAN] ❌ Error scanning thread:`, error);
-    return undefined;
-  }
-}
-
-/**
- * Fast follow-up search handler - bypasses AI for instant results
- */
-async function handleFollowUpSearch(
+const updateStatusUtil = async (
+  initialStatus: string,
   event: AppMentionEvent,
-  userMessage: string,
-  searchContext: { query: string, page: number }
-): Promise<boolean> {
-  console.log(`[FOLLOW_UP] 🚀 Fast follow-up search: "${searchContext.query}" + "${userMessage}"`);
-
-  try {
-    // Combine original query with user refinement
-    const enhancedQuery = `${searchContext.query} ${userMessage}`;
-    console.log(`[FOLLOW_UP] 🔍 Enhanced query: "${enhancedQuery}"`);
-
-    // Call Amazon API directly (same as slash command)
-    const { products, pagination } = await amazonSearchTool.execute({
-      query: enhancedQuery,
-      page: 1,
-      perPage: 5
-    });
-
-    if (!products.length) {
-      await client.chat.postMessage({
-        channel: event.channel,
-        thread_ts: event.thread_ts || event.ts,
-        text: `No products found for "${enhancedQuery}".`
-      });
-      return true;
-    }
-
-    // Use exact same formatting as slash command
-    const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-    const blocks = formatProductBlocksStateless(products.slice(0, 5), 1, totalPages, enhancedQuery);
-
-    await client.chat.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts || event.ts,
-      text: `Amazon search results for "${enhancedQuery}":`,
-      blocks
-    });
-
-    console.log(`[FOLLOW_UP] ✅ Fast search complete: ${products.length} products found`);
-    return true;
-
-  } catch (error) {
-    console.error("[FOLLOW_UP] ❌ Fast search failed:", error);
-    return false; // Fall back to AI
-  }
-}
-
-/**
- * Smart fallback to detect search intent without thread context
- */
-function detectSearchIntent(userMessage: string): string | undefined {
-  const msg = userMessage.toLowerCase();
-
-  // Common patterns for product refinements
-  const patterns = [
-    { keywords: ['black', 'white', 'red', 'blue', 'green', 'yellow', 'pink', 'purple', 'orange', 'gray', 'grey', 'silver', 'gold'], base: 'phone cases' },
-    { keywords: ['case', 'cases', 'cover', 'covers'], base: 'phone cases' },
-    { keywords: ['headphone', 'headphones', 'earphone', 'earphones', 'earbuds'], base: 'headphones' },
-    { keywords: ['water', 'bottle', 'bottles'], base: 'water bottles' },
-    { keywords: ['snack', 'snacks', 'food'], base: 'snacks' },
-    { keywords: ['charger', 'charging', 'cable'], base: 'phone chargers' },
-    { keywords: ['laptop', 'computer'], base: 'laptop accessories' },
-  ];
-
-  for (const pattern of patterns) {
-    if (pattern.keywords.some(keyword => msg.includes(keyword))) {
-      console.log(`[SMART_FALLBACK] 🎯 Detected "${pattern.base}" from message: "${userMessage}"`);
-      return pattern.base;
-    }
-  }
-
-  return undefined;
-}
-
-export const handleAppMention = async (
-  event: AppMentionEvent,
-  updateStatus?: (status: string) => void
 ) => {
-  try {
-    const userMessage = event.text.replace(/<@[^>]+>/g, '').trim();
-    console.log("📝 User message in app mention:", userMessage);
+  const initialMessage = await client.chat.postMessage({
+    channel: event.channel,
+    thread_ts: event.thread_ts ?? event.ts,
+    text: initialStatus,
+  });
 
-    // FAST PATH: Check for follow-up search context (thread only)
-    if (event.thread_ts && event.user) {
-      let searchContext = getSearchContext(event.thread_ts, event.channel, event.user);
+  if (!initialMessage || !initialMessage.ts)
+    throw new Error("Failed to post initial message");
 
-      // If no context in storage, try multiple fallback methods
-      if (!searchContext) {
-        console.log(`[FOLLOW_UP] 🔍 No storage context, trying fallback methods...`);
-
-        // Method 1: Scan thread messages for original search
-        let originalQuery = await findOriginalSearchInThread(event.channel, event.thread_ts);
-
-        // Method 2: Smart pattern detection if thread scan fails
-        if (!originalQuery) {
-          originalQuery = detectSearchIntent(userMessage);
-        }
-
-        if (originalQuery) {
-          searchContext = { query: originalQuery, page: 1 };
-          console.log(`[FOLLOW_UP] 🎯 Found search context via fallback: "${originalQuery}"`);
-        }
-      }
-
-      if (searchContext) {
-        console.log(`[FOLLOW_UP] 🎯 Using search context: "${searchContext.query}"`);
-
-        // Try fast follow-up search (bypass AI)
-        const handled = await handleFollowUpSearch(event, userMessage, searchContext);
-        if (handled) {
-          return; // Success! Exit early
-        }
-        console.log(`[FOLLOW_UP] ⚠️ Fast search failed, falling back to AI`);
-      } else {
-        console.log(`[FOLLOW_UP] ❌ No search context found in storage or thread`);
-      }
-    }
-
-    // SLOW PATH: Fall back to AI for normal conversations and buying
-    console.log(`[APP_MENTION] 🤖 Using AI for: "${userMessage}"`);
-
-    // Get user profile to fetch email
-    let userEmail: string | undefined;
-    if (event.user) {
+  const updateMessage = async (status: string) => {
+    try {
+      console.log("Updating message with status:", status);
+      await client.chat.update({
+        channel: event.channel,
+        ts: initialMessage.ts as string,
+        text: status,
+      });
+      console.log("Message updated successfully");
+    } catch (error) {
+      console.error("Error updating message:", error);
+      // If update fails, try to post a new message
       try {
-        const userInfo = await client.users.info({ user: event.user });
-        userEmail = userInfo.user?.profile?.email || undefined;
-        console.log("📧 User email from profile:", userEmail);
-      } catch (error) {
-        console.error("Failed to fetch user email:", error);
+        await client.chat.postMessage({
+          channel: event.channel,
+          thread_ts: event.thread_ts ?? event.ts,
+          text: status,
+        });
+        console.log("Posted new message as fallback");
+      } catch (fallbackError) {
+        console.error("Fallback message posting failed:", fallbackError);
       }
     }
+  };
+  return updateMessage;
+};
 
-    // Generate AI response with thread context
-    const response = await generateResponse(
-      [{ role: "user", content: userMessage }],
-      updateStatus,
-      userEmail,
-      event.user,
-      event.thread_ts || event.ts, // Use thread_ts if available, otherwise event.ts
-      event.channel
+export async function handleNewAppMention(
+  event: AppMentionEvent,
+  botUserId: string,
+) {
+  console.log("Handling app mention");
+  if (event.bot_id || event.bot_id === botUserId || event.bot_profile) {
+    console.log("Skipping app mention");
+    return;
+  }
+
+  const { thread_ts, channel, user } = event;
+  // Use event.ts if thread_ts is missing (for new messages)
+  const rootTs = thread_ts || (event as any).ts;
+  if (!rootTs) {
+    console.error('[ERROR] No valid thread_ts or ts found in event:', event);
+    return;
+  }
+
+  try {
+    const updateMessage = await updateStatusUtil("is thinking...", event);
+
+    // NEW: Test Amazon query extraction functionality
+    // Check if this thread contains Amazon search results
+    const threadMessages = await getThread(channel, rootTs, botUserId);
+    const botResponseMessage = threadMessages.find(msg =>
+      msg.role === 'assistant' &&
+      typeof msg.content === 'string' &&
+      msg.content.includes('Amazon Results for: ')
     );
 
-    // Send response with blocks if available
-    const messagePayload: any = {
-      channel: event.channel,
-      thread_ts: event.thread_ts || event.ts,
-    };
+    if (botResponseMessage && typeof botResponseMessage.content === 'string') {
+      console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
+      const match = botResponseMessage.content.match(/Amazon Results for: (.+)/);
+      if (match) {
+        const originalQuery = match[1].split('|')[0].trim(); // Handle pagination format
+        console.log("[DEBUG] Extracted original query:", originalQuery);
 
-    if (response.blocks) {
-      messagePayload.blocks = response.blocks;
-      messagePayload.text = response.text; // Fallback text for notifications
-    } else {
-      messagePayload.text = response.text;
+        // Extract refinement text from user's mention
+        const refinementText = event.text?.replace(`<@${botUserId}>`, '').trim() || '';
+        console.log("[DEBUG] User refinement text:", refinementText);
+
+        // TEST: Reply with extracted information
+        await client.chat.postMessage({
+          channel: channel,
+          thread_ts: rootTs,
+          text: `🔍 **Query Extraction Test**\n\nOriginal query: "${originalQuery}"\nYour refinement: "${refinementText}"\n\n_This is a test to confirm query extraction works. Full search refinement coming next!_`,
+        });
+
+        await updateMessage("");
+        return; // Exit early for testing
+      }
     }
 
-    console.log("[SLACK] Posting message payload:", JSON.stringify(messagePayload, null, 2));
-    await client.chat.postMessage(messagePayload);
-  } catch (error) {
-    console.error("Error in app mention handler:", error);
+    // Fetch user profile (email, timezone)
+    let userEmail: string | undefined = undefined;
+    let userTz: string | null = null;
+    let userTzLabel: string | null = null;
+    let office: string | undefined = undefined;
+    // Check if the user's message contains a valid office name
+    const officeNames = [
+      "Miami Office",
+      "New York Office",
+      "Buenos Aires Office",
+      "Madrid Office"
+    ];
+    let officeFromMessage: string | undefined = undefined;
+    if (event.text) {
+      for (const name of officeNames) {
+        if (event.text.toLowerCase().includes(name.toLowerCase())) {
+          officeFromMessage = name;
+          break;
+        }
+      }
+    }
+    if (officeFromMessage) {
+      office = officeFromMessage;
+    } else if (user) {
+      const profile = await getUserProfile(user);
+      console.log("[DEBUG] AppMention user profile:", profile);
+      userEmail = profile.email || undefined;
+      userTz = profile.tz;
+      userTzLabel = profile.tz_label;
+      const offices = getOfficeForTimezone(userTz, userTzLabel);
+      console.log("[DEBUG] Office candidates:", offices);
+      if (offices.length === 1) {
+        office = offices[0];
+      } else if (offices.length > 1) {
+        // Ambiguous: prompt user to choose
+        await client.chat.postMessage({
+          channel,
+          thread_ts: rootTs,
+          text: `We have offices in both New York City and Miami for your timezone. Which one would you like to use for your order?`,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `We have offices in both *New York City* and *Miami* for your timezone. Which one would you like to use for your order?`,
+              },
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "New York City" },
+                  value: "New York City",
+                  action_id: "select_office_nyc"
+                },
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Miami" },
+                  value: "Miami",
+                  action_id: "select_office_miami"
+                }
+              ]
+            }
+          ]
+        });
+        return;
+      } else {
+        // Not in any known timezone: ask user to reply with their office
+        await client.chat.postMessage({
+          channel,
+          thread_ts: rootTs,
+          text: `I couldn't detect your office location from your timezone. Please reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).`,
+        });
+        return;
+      }
+    }
+
+    // After office is determined, always fetch user email if not already set
+    if (!userEmail && user) {
+      const profile = await getUserProfile(user);
+      userEmail = profile.email || undefined;
+    }
+
+    // Ensure channel and thread_ts are strings
+    const safeChannel = channel || "";
+    const safeThreadTs = rootTs;
+
+    const messages = await getThread(safeChannel, safeThreadTs, botUserId);
+    let result = await generateResponse(messages, updateMessage, userEmail ?? undefined);
+    console.log("Generated response for app mention:", result);
+
     await client.chat.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts || event.ts,
-      text: "Sorry, I encountered an error processing your request. Please try again.",
+      channel: safeChannel,
+      thread_ts: safeThreadTs,
+      text: result,
+      unfurl_links: false,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: result,
+          },
+        },
+      ],
     });
+
+    await updateMessage("");
+  } catch (error) {
+    console.error("Error in handleNewAppMention:", error);
+    try {
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: thread_ts,
+        text: "Sorry, I encountered an error while processing your request. Please try again.",
+      });
+    } catch (errorPostingError) {
+      console.error("Failed to post error message:", errorPostingError);
+    }
   }
-};
+}
