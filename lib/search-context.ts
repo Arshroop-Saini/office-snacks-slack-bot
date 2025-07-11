@@ -1,6 +1,5 @@
-// Simple in-memory storage for thread-scoped search queries and pagination
-// threadSearchQueries: Map<threadTs, { query: string, page: number }>
-const threadSearchQueries = new Map<string, { query: string, page: number }>();
+// Simple in-memory storage for thread-scoped search queries
+const threadSearchQueries = new Map<string, string>();
 
 // Temporary storage for recent searches before thread is created
 const recentSearches = new Map<string, { query: string, timestamp: number }>();
@@ -22,14 +21,13 @@ export function storeRecentSearch(channelId: string, userId: string, query: stri
 }
 
 /**
- * Store the search query and page for a thread (when we have the thread timestamp)
+ * Store the search query for a thread (when we have the thread timestamp)
  * @param threadTs - The Slack thread timestamp
  * @param query - The search query
- * @param page - The current page number
  */
-export function storeThreadSearch(threadTs: string, query: string, page: number = 1): void {
-    threadSearchQueries.set(threadTs, { query, page });
-    console.log(`[SEARCH_CONTEXT] ✅ Stored thread search for ${threadTs}: "${query}" (page ${page})`);
+export function storeThreadSearch(threadTs: string, query: string): void {
+    threadSearchQueries.set(threadTs, query);
+    console.log(`[SEARCH_CONTEXT] ✅ Stored thread search for ${threadTs}: "${query}"`);
     console.log(`[SEARCH_CONTEXT] 📊 Storage state:`, {
         recentSearches: Array.from(recentSearches.entries()),
         threadSearches: Array.from(threadSearchQueries.entries())
@@ -41,9 +39,9 @@ export function storeThreadSearch(threadTs: string, query: string, page: number 
  * @param threadTs - The Slack thread timestamp (if in a thread)
  * @param channelId - The Slack channel ID
  * @param userId - The Slack user ID
- * @returns { query: string, page: number } or undefined if none exists
+ * @returns The search query or undefined if none exists
  */
-export function getSearchContext(threadTs: string | undefined, channelId: string, userId: string): { query: string, page: number } | undefined {
+export function getSearchContext(threadTs: string | undefined, channelId: string, userId: string): string | undefined {
     console.log(`[SEARCH_CONTEXT] 🔍 Looking for context:`, {
         threadTs,
         channelId,
@@ -54,10 +52,10 @@ export function getSearchContext(threadTs: string | undefined, channelId: string
 
     // First check if we have thread-specific context
     if (threadTs) {
-        const threadData = threadSearchQueries.get(threadTs);
-        if (threadData) {
-            console.log(`[SEARCH_CONTEXT] ✅ Found thread search for ${threadTs}: "${threadData.query}" (page ${threadData.page})`);
-            return threadData;
+        const threadQuery = threadSearchQueries.get(threadTs);
+        if (threadQuery) {
+            console.log(`[SEARCH_CONTEXT] ✅ Found thread search for ${threadTs}: "${threadQuery}"`);
+            return threadQuery;
         }
         console.log(`[SEARCH_CONTEXT] ❌ No thread search found for ${threadTs}`);
     }
@@ -73,12 +71,11 @@ export function getSearchContext(threadTs: string | undefined, channelId: string
         // If we're in a thread, promote this to thread-specific storage
         if (threadTs) {
             console.log(`[SEARCH_CONTEXT] 🔄 Promoting recent search to thread ${threadTs}`);
-            storeThreadSearch(threadTs, recent.query, 1);
-            // Don't delete the recent search yet - keep it as backup
-            return { query: recent.query, page: 1 };
+            storeThreadSearch(threadTs, recent.query);
+            recentSearches.delete(key); // Clean up
         }
 
-        return { query: recent.query, page: 1 };
+        return recent.query;
     }
 
     if (recent) {
@@ -87,36 +84,8 @@ export function getSearchContext(threadTs: string | undefined, channelId: string
         console.log(`[SEARCH_CONTEXT] ❌ No recent search found for ${key}`);
     }
 
-    // ENHANCED: Check if we can find a recent search for ANY user in this channel (fallback)
-    console.log(`[SEARCH_CONTEXT] 🔄 Checking for any recent searches in channel ${channelId}...`);
-    for (const [searchKey, searchData] of recentSearches.entries()) {
-        if (searchKey.startsWith(`${channelId}-`) && (Date.now() - searchData.timestamp < 10 * 60 * 1000)) {
-            console.log(`[SEARCH_CONTEXT] 🔄 Found channel fallback search: ${searchKey} -> "${searchData.query}"`);
-
-            // If we're in a thread, promote this to thread-specific storage
-            if (threadTs) {
-                console.log(`[SEARCH_CONTEXT] 🔄 Promoting channel fallback to thread ${threadTs}`);
-                storeThreadSearch(threadTs, searchData.query, 1);
-                return { query: searchData.query, page: 1 };
-            }
-
-            return { query: searchData.query, page: 1 };
-        }
-    }
-
     console.log(`[SEARCH_CONTEXT] ❌ No search context found for thread ${threadTs} or ${key}`);
     return undefined;
-}
-
-/**
- * Update the page for a thread context
- */
-export function updateThreadPage(threadTs: string, page: number): void {
-    const data = threadSearchQueries.get(threadTs);
-    if (data) {
-        threadSearchQueries.set(threadTs, { ...data, page });
-        console.log(`[SEARCH_CONTEXT] 🔄 Updated page for thread ${threadTs} to ${page}`);
-    }
 }
 
 /**

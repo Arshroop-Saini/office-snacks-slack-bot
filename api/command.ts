@@ -135,12 +135,6 @@ export async function POST(request: Request) {
             console.log("[COMMAND] Slash command response body:", JSON.stringify(responseBody));
 
             // Store recent search context for conversational enhancement
-            console.log(`[COMMAND] 🔍 Storing search context with keys:`, {
-                channel_id: params.channel_id,
-                user_id: params.user_id,
-                query: query,
-                key: `${params.channel_id}-${params.user_id}`
-            });
             storeRecentSearch(params.channel_id, params.user_id, query);
 
             return new Response(

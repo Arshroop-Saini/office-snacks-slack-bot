@@ -45,7 +45,6 @@ export const handleAppMention = async (
       messagePayload.text = response.text;
     }
 
-    console.log("[SLACK] Posting message payload:", JSON.stringify(messagePayload, null, 2));
     await client.chat.postMessage(messagePayload);
   } catch (error) {
     console.error("Error in app mention handler:", error);
