@@ -48,6 +48,7 @@ export const handleMessages = async (
       messagePayload.text = response.text;
     }
 
+    console.log("[SLACK] Posting message payload:", JSON.stringify(messagePayload, null, 2));
     await client.chat.postMessage(messagePayload);
   } catch (error) {
     console.error("Error in message handler:", error);

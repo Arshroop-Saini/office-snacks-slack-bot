@@ -104,9 +104,11 @@ export const generateResponse = async (
     model: openai("gpt-4o"),
     messages: messagesWithEmail,
     tools,
-    maxSteps: 10,
+    maxSteps: 5,
     system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail, searchQuery),
   });
+
+  console.log("[AI] Finished generateText call. Response:", JSON.stringify(generateTextResponse, null, 2));
 
   console.log(
     "🛠️ Generate text response:",
@@ -118,6 +120,7 @@ export const generateResponse = async (
     (step) => step.toolCalls?.some((call) => call.toolName === "search_amazon_products")
   );
 
+  let blocks: any[] | undefined;
   if (amazonSearchStep) {
     // Find the Amazon search tool call and its corresponding result
     const amazonCallIndex = amazonSearchStep.toolCalls?.findIndex(
@@ -140,17 +143,12 @@ export const generateResponse = async (
 
           if (products && Array.isArray(products) && products.length > 0) {
             // Format as blocks using the shared utility
-            const blocks = formatProductBlocksStateless(
+            blocks = formatProductBlocksStateless(
               products as Product[],
               1, // page
               1, // totalPages (AI responses don't paginate)
               queryParam
             );
-
-            return {
-              text: `Here are some options for ${queryParam}:`,
-              blocks
-            };
           }
         } catch (err) {
           console.error("Error parsing Amazon search result:", err);
@@ -162,9 +160,12 @@ export const generateResponse = async (
   const text = generateTextResponse.text || "Failed to generate response";
 
   // Convert markdown to Slack mrkdwn format
-  return {
-    text: text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*")
+  const responseObj = {
+    text: text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*"),
+    ...(blocks ? { blocks } : {})
   };
+  console.log("[AI] Returning response to handler:", JSON.stringify(responseObj, null, 2));
+  return responseObj;
 };
 
 const getSystemPrompt = (payerAddress: string, userEmail?: string, lastSearchQuery?: string) => {
