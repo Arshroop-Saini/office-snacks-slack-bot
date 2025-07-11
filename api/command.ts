@@ -17,7 +17,6 @@ type Product = {
 };
 
 export const maxDuration = 60;
-
 const MAX_PRODUCTS = 20; // Reduce for Slack payload safety
 
 // Only cache minimal fields for context
