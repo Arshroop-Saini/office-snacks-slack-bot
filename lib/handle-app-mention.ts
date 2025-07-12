@@ -149,40 +149,40 @@ export async function handleNewAppMention(
   try {
     const updateMessage = await updateStatusUtil("is thinking...", event);
 
-    // NEW: Test Amazon query extraction functionality
-    // Check if this thread contains Amazon search results
-    const threadMessages = await getThread(channel, rootTs, botUserId);
-    const botResponseMessage = threadMessages.find(msg =>
-      msg.role === 'assistant' &&
-      typeof msg.content === 'string' &&
-      msg.content.includes('Amazon search results for')
-    );
+    // NEW: Check for Amazon links FIRST before any refinement logic
+    // Extract user's message text
+    const userMessageText = event.text?.replace(`<@${botUserId}>`, '').trim() || '';
+    console.log("[DEBUG] User message text:", userMessageText);
 
-    if (botResponseMessage && typeof botResponseMessage.content === 'string') {
-      console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
-      const match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
-      if (match) {
-        const originalQuery = match[1].trim(); // Extract from quotes
-        console.log("[DEBUG] Extracted original query:", originalQuery);
+    // Check if user's message contains an Amazon link
+    const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
+    const containsAmazonLink = amazonLinkPattern.test(userMessageText);
+    console.log("[DEBUG] Contains Amazon link:", containsAmazonLink);
 
-        // Extract refinement text from user's mention
-        const refinementText = event.text?.replace(`<@${botUserId}>`, '').trim() || '';
-        console.log("[DEBUG] User refinement text:", refinementText);
+    if (containsAmazonLink) {
+      console.log("[DEBUG] Amazon link detected - skipping refinement logic entirely, proceeding with normal buying flow");
+      await updateMessage("Processing Amazon link for purchase...");
+      // Skip ALL refinement logic and proceed with normal mention handling
+    } else {
+      console.log("[DEBUG] No Amazon link detected - checking for refinement scenario");
 
-        // Check if user's message contains an Amazon link
-        const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
-        const containsAmazonLink = amazonLinkPattern.test(refinementText);
-        console.log("[DEBUG] Contains Amazon link:", containsAmazonLink);
+      // Only check for refinement scenario if no Amazon link was found
+      const threadMessages = await getThread(channel, rootTs, botUserId);
+      const botResponseMessage = threadMessages.find(msg =>
+        msg.role === 'assistant' &&
+        typeof msg.content === 'string' &&
+        msg.content.includes('Amazon search results for')
+      );
 
-        if (containsAmazonLink) {
-          console.log("[DEBUG] Amazon link detected - bypassing refinement logic, proceeding with normal buying flow");
-          await updateMessage("Processing Amazon link for purchase...");
-          // Exit the refinement block and proceed with normal mention handling
-        } else {
-          console.log("[DEBUG] No Amazon link detected - proceeding with refinement logic");
+      if (botResponseMessage && typeof botResponseMessage.content === 'string') {
+        console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
+        const match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
+        if (match) {
+          const originalQuery = match[1].trim(); // Extract from quotes
+          console.log("[DEBUG] Extracted original query:", originalQuery);
 
           // Combine original query with refinement
-          const combinedQuery = combineQueries(originalQuery, refinementText);
+          const combinedQuery = combineQueries(originalQuery, userMessageText);
           console.log("[DEBUG] Combined query:", combinedQuery);
 
           // Execute Amazon search with combined query
