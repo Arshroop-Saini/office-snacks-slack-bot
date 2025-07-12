@@ -317,8 +317,19 @@ if (botResponseMessage) {
   - ✅ Exact same formatting as `/amazon` command (copied all functions)
   - ✅ Error handling for no results and API failures
   - ✅ Build completes successfully with no errors
-- **READY FOR FULL TESTING**: Complete refinement flow is ready to test end-to-end!
+- **BUYING FLOW FIXED**: Fixed buying flow in threads with Amazon search results
+  - ✅ Added Amazon URL detection to distinguish between refinement vs buying requests
+  - ✅ Refinement requests (text only) → Execute refined search
+  - ✅ Buying requests (contain Amazon URLs) → Fall through to normal buying flow
+  - ✅ Both flows now work correctly in threads with Amazon search results
+- **FEATURE COMPLETE**: Thread-based query refinement + buying flow both working!
 
 # Lessons
 
-_(To be filled during execution)_ 
+**Thread-based Query Refinement Implementation:**
+- **Message Format Detection**: Had to analyze actual Slack message format (`"Amazon search results for \"query\":"`) rather than assuming format
+- **Regex Pattern Matching**: Used `/Amazon search results for "([^"]+)":/` to extract original query from bot's response message
+- **Early Return Issue**: Initial implementation blocked buying flow with early returns - needed to add URL detection logic
+- **Copy-Paste Approach**: Most efficient approach was copying existing formatting functions rather than creating new ones
+- **URL Detection**: Used regex pattern `/amazon\.com\/.*\/dp\/|amazon\.com\/dp\/|amzn\.to\/|a\.co\//i` to distinguish buying vs refinement requests
+- **Thread Context**: Using `getThread()` function to scan thread history was the most reliable approach for context storage 
