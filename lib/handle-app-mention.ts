@@ -166,69 +166,84 @@ export async function handleNewAppMention(
     } else {
       console.log("[DEBUG] No Amazon link detected - checking for refinement scenario");
 
-      // Only check for refinement scenario if no Amazon link was found
-      const threadMessages = await getThread(channel, rootTs, botUserId);
-      const botResponseMessage = threadMessages.find(msg =>
-        msg.role === 'assistant' &&
-        typeof msg.content === 'string' &&
-        msg.content.includes('Amazon search results for')
+      // Check if this looks like an office selection (part of buying flow)
+      const officeNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
+      const looksLikeOfficeSelection = officeNames.some(office =>
+        userMessageText.toLowerCase().includes(office.toLowerCase())
       );
+      console.log("[DEBUG] Looks like office selection:", looksLikeOfficeSelection);
 
-      if (botResponseMessage && typeof botResponseMessage.content === 'string') {
-        console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
-        const match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
-        if (match) {
-          const originalQuery = match[1].trim(); // Extract from quotes
-          console.log("[DEBUG] Extracted original query:", originalQuery);
+      if (looksLikeOfficeSelection) {
+        console.log("[DEBUG] Office selection detected - skipping refinement logic, proceeding with buying flow");
+        await updateMessage("Processing office selection...");
+        // Skip refinement logic and proceed with normal mention handling (buying flow)
+      } else {
+        console.log("[DEBUG] Not office selection - checking for refinement scenario");
 
-          // Combine original query with refinement
-          const combinedQuery = combineQueries(originalQuery, userMessageText);
-          console.log("[DEBUG] Combined query:", combinedQuery);
+        // Only check for refinement scenario if no Amazon link AND not office selection
+        const threadMessages = await getThread(channel, rootTs, botUserId);
+        const botResponseMessage = threadMessages.find(msg =>
+          msg.role === 'assistant' &&
+          typeof msg.content === 'string' &&
+          msg.content.includes('Amazon search results for')
+        );
 
-          // Execute Amazon search with combined query
-          try {
-            const perPage = 5;
-            const page = 1;
-            const { products, pagination } = await amazonSearchTool.execute({
-              query: combinedQuery,
-              page,
-              perPage
-            });
+        if (botResponseMessage && typeof botResponseMessage.content === 'string') {
+          console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
+          const match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
+          if (match) {
+            const originalQuery = match[1].trim(); // Extract from quotes
+            console.log("[DEBUG] Extracted original query:", originalQuery);
 
-            if (!products.length) {
+            // Combine original query with refinement
+            const combinedQuery = combineQueries(originalQuery, userMessageText);
+            console.log("[DEBUG] Combined query:", combinedQuery);
+
+            // Execute Amazon search with combined query
+            try {
+              const perPage = 5;
+              const page = 1;
+              const { products, pagination } = await amazonSearchTool.execute({
+                query: combinedQuery,
+                page,
+                perPage
+              });
+
+              if (!products.length) {
+                await client.chat.postMessage({
+                  channel: channel,
+                  thread_ts: rootTs,
+                  text: `No products found for refined search: "${combinedQuery}"`
+                });
+                await updateMessage("No products found for refined search");
+                return;
+              }
+
+              const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+              const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, combinedQuery);
+
+              // Post results using blocks (same as /amazon command)
               await client.chat.postMessage({
                 channel: channel,
                 thread_ts: rootTs,
-                text: `No products found for refined search: "${combinedQuery}"`
+                text: `Refined Amazon search results for "${combinedQuery}":`,
+                blocks,
+                unfurl_links: false
               });
-              await updateMessage("No products found for refined search");
+
+              await updateMessage("Refined search completed");
+              return;
+
+            } catch (err) {
+              console.error("[DEBUG] Error in refined Amazon search:", err);
+              await client.chat.postMessage({
+                channel: channel,
+                thread_ts: rootTs,
+                text: `Sorry, there was an error with your refined search. Please try again.`
+              });
+              await updateMessage("Error in refined search");
               return;
             }
-
-            const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-            const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, combinedQuery);
-
-            // Post results using blocks (same as /amazon command)
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `Refined Amazon search results for "${combinedQuery}":`,
-              blocks,
-              unfurl_links: false
-            });
-
-            await updateMessage("Refined search completed");
-            return;
-
-          } catch (err) {
-            console.error("[DEBUG] Error in refined Amazon search:", err);
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `Sorry, there was an error with your refined search. Please try again.`
-            });
-            await updateMessage("Error in refined search");
-            return;
           }
         }
       }
