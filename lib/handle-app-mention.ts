@@ -169,14 +169,17 @@ export async function handleNewAppMention(
         const refinementText = event.text?.replace(`<@${botUserId}>`, '').trim() || '';
         console.log("[DEBUG] User refinement text:", refinementText);
 
-        // Check if user's message contains an Amazon URL - if so, let it fall through to buying flow
-        const amazonUrlPattern = /amazon\.com\/.*\/dp\/|amazon\.com\/dp\/|amzn\.to\/|a\.co\//i;
-        if (amazonUrlPattern.test(refinementText)) {
-          console.log("[DEBUG] User message contains Amazon URL - skipping refinement, using normal buying flow");
-          // Don't return early - let it fall through to normal buying flow
+        // Check if user's message contains an Amazon link
+        const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
+        const containsAmazonLink = amazonLinkPattern.test(refinementText);
+        console.log("[DEBUG] Contains Amazon link:", containsAmazonLink);
+
+        if (containsAmazonLink) {
+          console.log("[DEBUG] Amazon link detected - bypassing refinement logic, proceeding with normal buying flow");
+          await updateMessage("Processing Amazon link for purchase...");
+          // Exit the refinement block and proceed with normal mention handling
         } else {
-          // This is a refinement request, not a buying request
-          console.log("[DEBUG] User message is refinement request - executing refined search");
+          console.log("[DEBUG] No Amazon link detected - proceeding with refinement logic");
 
           // Combine original query with refinement
           const combinedQuery = combineQueries(originalQuery, refinementText);
