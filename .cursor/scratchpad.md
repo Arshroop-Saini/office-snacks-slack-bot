@@ -388,12 +388,14 @@ The ASIN Direct Lookup feature has been fully implemented and integrated across 
 - Compatible with enhanced error handling system
 - Maintains thread context for purchase operations
 - No conflicts with existing refinement or buying flows
+- **NEW: ASIN Buying Support** - Users can now buy products directly with ASINs: `@snack_bot buy this B0DWQC12R5`
 
 **All major UX enhancement features are now complete**. The bot now supports:
 1. Thread-based query refinement for conversational search
 2. Direct ASIN lookup for efficient product discovery
 3. Enhanced error handling for all failure scenarios
 4. Robust office selection across all timezone scenarios
+5. **NEW: ASIN-based purchasing** - Direct buying with ASINs
 
 The codebase is ready for the next phase of development (Sonnet 3.7 integration, wallet management, etc.). 
 
@@ -409,4 +411,5 @@ The codebase is ready for the next phase of development (Sonnet 3.7 integration,
 8. **Crossmint returns specific status codes** - `quote:all-line-items-unavailable`, `payment:failed`, etc. that can be mapped to user-friendly messages
 9. **Error parsing requires comprehensive pattern matching** - Check multiple error object properties (cause, response, data) and various string patterns
 10. **ASIN detection requires precise pattern matching** - ASINs follow specific format `B[0-9A-Z]{9}` and SearchAPI.io supports direct ASIN queries for efficient lookups
-11. **ASIN queries should be treated as new lookups, not refinements** - In thread contexts, ASIN queries should bypass refinement logic and execute direct product lookups for better UX 
+11. **ASIN queries should be treated as new lookups, not refinements** - In thread contexts, ASIN queries should bypass refinement logic and execute direct product lookups for better UX
+12. **ASIN buying can leverage existing URL-based flow** - By fetching product URL from SearchAPI and replacing the user message, ASIN purchases can reuse the existing Crossmint buying infrastructure seamlessly 

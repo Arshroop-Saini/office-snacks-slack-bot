@@ -173,10 +173,79 @@ export async function handleNewAppMention(
     const containsAmazonLink = amazonLinkPattern.test(userMessageText);
     console.log("[DEBUG] Contains Amazon link:", containsAmazonLink);
 
+    // Check if user's message contains "buy this" with an ASIN
+    const buyThisPattern = /buy\s+this\s+([A-Z0-9\s]+)/i;
+    const buyThisMatch = userMessageText.match(buyThisPattern);
+    let containsAsinBuy = false;
+    let asinFromBuyMessage = '';
+
+    if (buyThisMatch) {
+      const potentialAsin = buyThisMatch[1].trim();
+      if (isASIN(potentialAsin)) {
+        containsAsinBuy = true;
+        asinFromBuyMessage = potentialAsin;
+        console.log("[DEBUG] ASIN buy detected:", asinFromBuyMessage);
+      }
+    }
+
     if (containsAmazonLink) {
       console.log("[DEBUG] Amazon link detected - skipping refinement logic entirely, proceeding with normal buying flow");
       await updateMessage("Processing Amazon link for purchase...");
       // Skip ALL refinement logic and proceed with normal mention handling
+    } else if (containsAsinBuy) {
+      console.log("[DEBUG] ASIN buy detected - fetching product details and proceeding with buying flow");
+      await updateMessage("Looking up product details for purchase...");
+
+      try {
+        // Validate ASIN first
+        const validation = validateASIN(asinFromBuyMessage);
+        if (!validation.valid) {
+          await client.chat.postMessage({
+            channel,
+            thread_ts: rootTs,
+            text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
+          });
+          return;
+        }
+
+        // Fetch product details using SearchAPI
+        const { products } = await amazonSearchTool.execute({
+          query: validation.normalized,
+          page: 1,
+          perPage: 1
+        });
+
+        if (!products.length) {
+          await client.chat.postMessage({
+            channel,
+            thread_ts: rootTs,
+            text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
+          });
+          return;
+        }
+
+        // Extract the Amazon URL from the product
+        const productUrl = products[0].url;
+        console.log("[DEBUG] Found product URL for ASIN:", productUrl);
+
+        // Replace the user's message with Amazon URL format for the buying flow
+        // This allows the existing Crossmint tools to process it correctly
+        if (buyThisMatch && event.text) {
+          event.text = event.text.replace(buyThisMatch[0], `buy this ${productUrl}`);
+          console.log("[DEBUG] Modified user message for buying flow:", event.text);
+        }
+
+        await updateMessage("Processing ASIN purchase...");
+        // Skip ALL refinement logic and proceed with normal mention handling
+      } catch (error) {
+        console.error("[DEBUG] Error in ASIN buy lookup:", error);
+        await client.chat.postMessage({
+          channel,
+          thread_ts: rootTs,
+          text: "Sorry, there was an error looking up that ASIN for purchase. Please try again later."
+        });
+        return;
+      }
     } else {
       console.log("[DEBUG] No Amazon link detected - checking for refinement scenario");
 
