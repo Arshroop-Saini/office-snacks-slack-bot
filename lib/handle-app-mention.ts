@@ -16,6 +16,20 @@ type Product = {
   description?: string;
 };
 
+// ASIN Detection and Validation Functions (copied from command.ts)
+function isASIN(query: string): boolean {
+  const asinPattern = /^B[0-9A-Z]{9}$/;
+  return asinPattern.test(query.trim().toUpperCase());
+}
+
+function validateASIN(asin: string): { valid: boolean; normalized: string } {
+  const normalized = asin.trim().toUpperCase();
+  return {
+    valid: /^B[0-9A-Z]{9}$/.test(normalized) && normalized.length === 10,
+    normalized
+  };
+}
+
 // Simple query combination function
 function combineQueries(originalQuery: string, refinement: string): string {
   // Simple approach: just combine with a space
@@ -180,7 +194,58 @@ export async function handleNewAppMention(
       } else {
         console.log("[DEBUG] Not office selection - checking for refinement scenario");
 
-        // Only check for refinement scenario if no Amazon link AND not office selection
+        // Check if user message is an ASIN query (treat as new lookup, not refinement)
+        const isAsinQuery = isASIN(userMessageText.trim());
+        if (isAsinQuery) {
+          console.log("[DEBUG] ASIN query detected in thread:", userMessageText);
+          const validation = validateASIN(userMessageText.trim());
+          if (!validation.valid) {
+            await client.chat.postMessage({
+              channel: channel,
+              thread_ts: rootTs,
+              text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
+            });
+            return;
+          }
+
+          // Execute ASIN lookup
+          try {
+            const { products } = await amazonSearchTool.execute({
+              query: validation.normalized,
+              page: 1,
+              perPage: 1
+            });
+
+            if (!products.length) {
+              await client.chat.postMessage({
+                channel: channel,
+                thread_ts: rootTs,
+                text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
+              });
+              return;
+            }
+
+            // Format single product (no pagination for ASIN)
+            const blocks = formatProductBlocksStateless([products[0]], 1, 1, validation.normalized, false);
+            await client.chat.postMessage({
+              channel: channel,
+              thread_ts: rootTs,
+              text: `Product Details for ASIN: \`${validation.normalized}\``,
+              blocks,
+            });
+            return;
+          } catch (error) {
+            console.error("[DEBUG] Error in ASIN lookup:", error);
+            await client.chat.postMessage({
+              channel: channel,
+              thread_ts: rootTs,
+              text: "Sorry, there was an error looking up that ASIN. Please try again later."
+            });
+            return;
+          }
+        }
+
+        // Only check for refinement scenario if no Amazon link AND not office selection AND not ASIN
         const threadMessages = await getThread(channel, rootTs, botUserId);
         const botResponseMessage = threadMessages.find(msg =>
           msg.role === 'assistant' &&
@@ -259,13 +324,26 @@ export async function handleNewAppMention(
       "Miami Office",
       "New York Office",
       "Buenos Aires Office",
-      "Madrid Office"
+      "Madrid Office",
+      "Miami",
+      "New York",
+      "Buenos Aires",
+      "Madrid"
     ];
     let officeFromMessage: string | undefined = undefined;
     if (event.text) {
       for (const name of officeNames) {
         if (event.text.toLowerCase().includes(name.toLowerCase())) {
-          officeFromMessage = name;
+          // Normalize to full office name
+          if (name.toLowerCase().includes("miami")) {
+            officeFromMessage = "Miami Office";
+          } else if (name.toLowerCase().includes("new york")) {
+            officeFromMessage = "New York Office";
+          } else if (name.toLowerCase().includes("buenos aires")) {
+            officeFromMessage = "Buenos Aires Office";
+          } else if (name.toLowerCase().includes("madrid")) {
+            officeFromMessage = "Madrid Office";
+          }
           break;
         }
       }
@@ -283,37 +361,11 @@ export async function handleNewAppMention(
       if (offices.length === 1) {
         office = offices[0];
       } else if (offices.length > 1) {
-        // Ambiguous: prompt user to choose
+        // Ambiguous: prompt user to choose by typing (no buttons)
         await client.chat.postMessage({
           channel,
           thread_ts: rootTs,
-          text: `We have offices in both New York City and Miami for your timezone. Which one would you like to use for your order?`,
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `We have offices in both *New York City* and *Miami* for your timezone. Which one would you like to use for your order?`,
-              },
-            },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "New York City" },
-                  value: "New York City",
-                  action_id: "select_office_nyc"
-                },
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Miami" },
-                  value: "Miami",
-                  action_id: "select_office_miami"
-                }
-              ]
-            }
-          ]
+          text: `We have offices in both New York City and Miami for your timezone. Please reply with your office location (choose from: Miami Office, New York Office).`,
         });
         return;
       } else {

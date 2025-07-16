@@ -15,6 +15,20 @@ type Product = {
     description?: string;
 };
 
+// ASIN Detection and Validation Functions
+function isASIN(query: string): boolean {
+    const asinPattern = /^B[0-9A-Z]{9}$/;
+    return asinPattern.test(query.trim().toUpperCase());
+}
+
+function validateASIN(asin: string): { valid: boolean; normalized: string } {
+    const normalized = asin.trim().toUpperCase();
+    return {
+        valid: /^B[0-9A-Z]{9}$/.test(normalized) && normalized.length === 10,
+        normalized
+    };
+}
+
 export const maxDuration = 60;
 
 const MAX_PRODUCTS = 20; // Reduce for Slack payload safety
@@ -183,27 +197,62 @@ export async function POST(request: Request) {
                 headers: { "Content-Type": "application/json" },
             });
         }
-        try {
-            const perPage = 5;
-            const page = 1;
-            const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
-            if (!products.length) {
-                console.log("[COMMAND] No products found");
+
+        // ASIN Detection and Validation
+        const isAsinQuery = isASIN(query);
+        if (isAsinQuery) {
+            const validation = validateASIN(query);
+            if (!validation.valid) {
+                console.log("[COMMAND] Invalid ASIN format:", query);
                 return new Response(
                     JSON.stringify({
                         response_type: "ephemeral",
-                        text: `No products found for \"${query}\".`
+                        text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
                     }),
                     { status: 200, headers: { "Content-Type": "application/json" } }
                 );
             }
-            const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-            const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
-            const responseBody = {
-                response_type: "in_channel",
-                text: `Amazon search results for \"${query}\":`,
-                blocks,
-            };
+            console.log("[COMMAND] ASIN lookup detected for:", validation.normalized);
+        }
+
+        try {
+            const perPage = 5;
+            const page = 1;
+            const { products, pagination } = await amazonSearchTool.execute({ query: isAsinQuery ? validateASIN(query).normalized : query, page, perPage });
+            if (!products.length) {
+                console.log("[COMMAND] No products found");
+                const errorText = isAsinQuery
+                    ? `❌ Product with ASIN \`${validateASIN(query).normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
+                    : `No products found for \"${query}\".`;
+                return new Response(
+                    JSON.stringify({
+                        response_type: "ephemeral",
+                        text: errorText
+                    }),
+                    { status: 200, headers: { "Content-Type": "application/json" } }
+                );
+            }
+
+            // Optimize display for ASIN queries vs regular searches
+            let responseBody;
+            if (isAsinQuery) {
+                // For ASIN queries: single product, no pagination
+                const blocks = formatProductBlocksStateless([products[0]], 1, 1, validateASIN(query).normalized, false);
+                responseBody = {
+                    response_type: "in_channel",
+                    text: `Product Details for ASIN: \`${validateASIN(query).normalized}\``,
+                    blocks,
+                };
+            } else {
+                // For regular searches: multiple products with pagination
+                const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+                const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
+                responseBody = {
+                    response_type: "in_channel",
+                    text: `Amazon search results for \"${query}\":`,
+                    blocks,
+                };
+            }
             console.log("[COMMAND] Slash command response body:", JSON.stringify(responseBody));
             return new Response(
                 JSON.stringify(responseBody),
