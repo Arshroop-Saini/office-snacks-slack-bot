@@ -58,6 +58,41 @@ export async function handleNewAssistantMessage(
     const latestUserMessage = threadMessages.filter(msg => msg.role === 'user').pop();
     const userMessageText = typeof latestUserMessage?.content === 'string' ? latestUserMessage.content : '';
 
+    // Check if user's message contains an Amazon link (CRITICAL: same logic as app mention handler)
+    const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
+    const containsAmazonLink = amazonLinkPattern.test(userMessageText);
+    console.log("[DEBUG] DM Contains Amazon link:", containsAmazonLink);
+
+    if (containsAmazonLink) {
+      console.log("[DEBUG] DM Amazon link detected - proceeding with buying flow (same as app mention)");
+      // Skip ALL other logic and proceed with normal AI conversation for buying flow
+      let userEmail: string | null = null;
+      if (user) {
+        userEmail = await getUserEmail(user);
+      }
+      let result = await generateResponse(threadMessages, updateStatus, userEmail ?? undefined);
+      console.log("Generated response for DM Amazon link:", result);
+
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: thread_ts,
+        text: result,
+        unfurl_links: false,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: result,
+            },
+          },
+        ],
+      });
+
+      await updateStatus("");
+      return;
+    }
+
     // Check if this looks like an office selection (from buying flow)
     const officeNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
     const looksLikeOfficeSelection = officeNames.some(office =>
