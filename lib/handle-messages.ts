@@ -64,38 +64,14 @@ export async function handleNewAssistantMessage(
     console.log("[DEBUG] DM Contains Amazon link:", containsAmazonLink);
 
     if (containsAmazonLink) {
-      console.log("[DEBUG] DM Amazon link detected - proceeding with buying flow (same as app mention)");
-      // Skip ALL other logic and proceed with normal AI conversation for buying flow
-      let userEmail: string | null = null;
-      if (user) {
-        userEmail = await getUserEmail(user);
-      }
-      let result = await generateResponse(threadMessages, updateStatus, userEmail ?? undefined);
-      console.log("Generated response for DM Amazon link:", result);
-
-      await client.chat.postMessage({
-        channel: channel,
-        thread_ts: thread_ts,
-        text: result,
-        unfurl_links: false,
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: result,
-            },
-          },
-        ],
-      });
-
-      await updateStatus("");
-      return;
+      console.log("[DEBUG] DM Amazon link detected - processing for purchase (same as app mention)");
+      await updateStatus("Processing Amazon link for purchase...");
+      // Continue to office detection - don't skip it!
     }
 
     // Check if this looks like an office selection (from buying flow)
-    const officeNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
-    const looksLikeOfficeSelection = officeNames.some(office =>
+    const officeSelectionNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
+    const looksLikeOfficeSelection = officeSelectionNames.some(office =>
       userMessageText.toLowerCase().includes(office.toLowerCase())
     );
     console.log("[DEBUG] DM Looks like office selection:", looksLikeOfficeSelection);
@@ -130,16 +106,41 @@ export async function handleNewAssistantMessage(
       return;
     }
 
-    // Try to fetch the user's email and timezone from Slack (for new purchase flows)
+    // Office detection logic (copied from app mention handler)
     let userEmail: string | null = null;
     let userTz: string | null = null;
     let userTzLabel: string | null = null;
     let office: string | null = null;
 
-    if (user) {
-      userEmail = await getUserEmail(user);
+    // First check if office is mentioned in the message (for buying flows)
+    const officeNames = [
+      "Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office",
+      "Miami", "New York", "Buenos Aires", "Madrid"
+    ];
+    let officeFromMessage: string | undefined = undefined;
+    for (const name of officeNames) {
+      if (userMessageText.toLowerCase().includes(name.toLowerCase())) {
+        // Normalize to full office name (same logic as app mention handler)
+        if (name.toLowerCase().includes("miami")) {
+          officeFromMessage = "Miami Office";
+        } else if (name.toLowerCase().includes("new york")) {
+          officeFromMessage = "New York Office";
+        } else if (name.toLowerCase().includes("buenos aires")) {
+          officeFromMessage = "Buenos Aires Office";
+        } else if (name.toLowerCase().includes("madrid")) {
+          officeFromMessage = "Madrid Office";
+        }
+        break;
+      }
+    }
+
+    if (officeFromMessage) {
+      office = officeFromMessage;
+      console.log("[DEBUG] DM Office from message:", office);
+    } else if (user) {
       const profile = await getUserProfile(user);
       console.log("[DEBUG] DM user profile:", profile);
+      userEmail = profile.email || null;
       userTz = profile.tz;
       userTzLabel = profile.tz_label;
 
@@ -167,6 +168,12 @@ export async function handleNewAssistantMessage(
         });
         return;
       }
+    }
+
+    // After office is determined, always fetch user email if not already set (same as app mention handler)
+    if (!userEmail && user) {
+      const profile = await getUserProfile(user);
+      userEmail = profile.email || null;
     }
 
     const finalMessages = await getThread(channel, thread_ts, botUserId);
