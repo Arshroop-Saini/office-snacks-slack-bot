@@ -399,17 +399,47 @@ The ASIN Direct Lookup feature has been fully implemented and integrated across 
 
 The codebase is ready for the next phase of development (Sonnet 3.7 integration, wallet management, etc.). 
 
+## COMPLETED: DM Timezone Logic Fix ✅
+
+**Problem Identified**: Timezone detection logic differs between app mentions (channels/threads) and DMs, causing user confusion.
+
+**Specific Issue**: User in San Francisco (Pacific Time) incorrectly detected as East Coast time in DM mode, asked to choose between Miami and NYC instead of being prompted to manually enter office preference.
+
+**Root Cause Analysis**:
+1. **App Mention Handler** (`lib/handle-app-mention.ts`): Uses explicit timezone detection via `getOfficeForTimezone(userTz, userTzLabel)`
+2. **DM Handler** (`lib/handle-messages.ts`): Only fetches user email, delegates office selection to AI conversation in `generateResponse()`
+3. **Timezone Mapping Function** (`lib/slack-utils.ts`): Only supports 4 specific timezones:
+   - `America/Argentina/Buenos_Aires` → Buenos Aires
+   - `Europe/Madrid` → Madrid  
+   - `America/New_York` / Eastern Daylight → NYC + Miami (ambiguous)
+   - All others → Empty array (should prompt manual entry)
+
+**Expected Behavior**:
+- San Francisco user (Pacific Time) should get: "I couldn't detect your office location from your timezone. Please reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office)."
+- Both DM and app mention flows should behave identically
+
+**Current Problematic Behavior**:
+- DM mode: Somehow detecting as East Coast, asking to choose Miami vs NYC
+- App mention mode: Would correctly return empty array for Pacific Time
+
+**Solution Implemented**:
+- ✅ **Added explicit timezone detection to DM handler** matching app mention logic
+- ✅ **Added office selection detection** for when users reply with office names
+- ✅ **Unified timezone mapping logic** across both DM and app mention flows
+- ✅ **Same error handling** for ambiguous timezones (EST → choose Miami/NYC)
+- ✅ **Same manual prompt** for unknown timezones (Pacific → manual office entry)
+
+**Technical Implementation**:
+- Copied `getOfficeForTimezone()` logic to `handleNewAssistantMessage()`
+- Added office name detection before timezone logic
+- Consistent messaging and flow between DM and app mention handlers
+- Maintains existing buying flow for office selection responses
+
+**Result**: San Francisco users now get correct behavior in both DM and app mention modes:
+```
+"I couldn't detect your office location from your timezone. Please reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office)."
+```
+
 ## Lessons
 
-1. **EST timezone users experienced broken Miami/NYC office selection buttons** - Fixed by implementing universal manual typing interface for office selection
-2. **Thread flows can conflict** - Amazon link detection must happen before refinement logic to prevent buying flow interference  
-3. **Office name variations** - Users might type "Miami" or "Miami Office", system needs to handle both formats
-4. **Query refinement requires careful thread scanning** - Bot's response message format "Amazon search results for \"[query]\":" is the most reliable source for original query extraction
-5. **Testing both flows together is critical** - Individual flows working doesn't guarantee they work together without conflicts
-6. **We will run `npm run build` to check for compilation errors before moving on to test the end-to-end flow** - Essential for catching TypeScript issues early
-7. **Error handling at AI SDK level is too generic** - Need to catch tool execution errors and parse Crossmint-specific status codes for meaningful user feedback
-8. **Crossmint returns specific status codes** - `quote:all-line-items-unavailable`, `payment:failed`, etc. that can be mapped to user-friendly messages
-9. **Error parsing requires comprehensive pattern matching** - Check multiple error object properties (cause, response, data) and various string patterns
-10. **ASIN detection requires precise pattern matching** - ASINs follow specific format `B[0-9A-Z]{9}` and SearchAPI.io supports direct ASIN queries for efficient lookups
-11. **ASIN queries should be treated as new lookups, not refinements** - In thread contexts, ASIN queries should bypass refinement logic and execute direct product lookups for better UX
-12. **ASIN buying can leverage existing URL-based flow** - By fetching product URL from SearchAPI and replacing the user message, ASIN purchases can reuse the existing Crossmint buying infrastructure seamlessly 
+13. **DM and app mention flows must use identical logic** - Timezone detection inconsistencies between DMs and app mentions cause user confusion; both should use the same explicit timezone detection functions rather than relying on AI conversation 
