@@ -108,8 +108,7 @@ function parseCrossmintError(error: any): string | null {
 export const generateResponse = async (
   messages: CoreMessage[],
   updateStatus?: (status: string) => void,
-  userEmail?: string,
-  timezonePrompt?: string
+  userEmail?: string
 ) => {
   const payerKeypair = Keypair.fromSecretKey(
     bs58.decode(process.env.SOLANA_SECRET_KEY as string)
@@ -154,7 +153,7 @@ export const generateResponse = async (
       messages: messagesWithEmail,
       tools,
       maxSteps: 10,
-      system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail, timezonePrompt),
+      system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail),
     });
 
     console.log(
@@ -185,13 +184,13 @@ export const generateResponse = async (
   }
 };
 
-const getSystemPrompt = (payerAddress: string, userEmail?: string, timezonePrompt?: string) => {
+const getSystemPrompt = (payerAddress: string, userEmail?: string) => {
   let emailStep = `3. Once they specify the office, you already have the email address from Slack, this is the user's email address: ${userEmail}, so you can proceed to the next step.`;
   if (userEmail) {
     emailStep = `3. Once they specify the office, say: 'I found your email as ${userEmail} from Slack and will use it for your order.' Do not ask the user for their email or confirmation. Proceed to the next step.`;
   }
-  // Use dynamic timezone-based office logic or fallback to default
-  const officeDisambiguation = timezonePrompt || `\nIf you cannot determine the user's office from their timezone, ask them to reply with their office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).`;
+  // Add office disambiguation step
+  const officeDisambiguation = `\nIf the user's timezone matches both New York City and Miami (Eastern Daylight Time), prompt the user to choose between the two offices before proceeding. For example, say: 'We have offices in both New York City and Miami for your timezone. Which one would you like to use for your order?' and wait for their response.\nIf you cannot determine the user's office from their timezone, ask them to reply with their office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).`;
   return `
 You are a friendly and helpful Office Snacks Assistant. Your name is SnackBot. Your job is to help team members order snacks and supplies for their office location.
 

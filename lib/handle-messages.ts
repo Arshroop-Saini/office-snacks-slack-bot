@@ -2,7 +2,7 @@ import type {
   AssistantThreadStartedEvent,
   GenericMessageEvent,
 } from "@slack/web-api";
-import { client, getThread, updateStatusUtil, getUserEmail, getUserProfile, getOfficeForTimezone } from "./slack-utils";
+import { client, getThread, updateStatusUtil, getUserEmail } from "./slack-utils";
 import { generateResponse } from "./generate-response";
 
 export async function assistantThreadMessage(
@@ -53,35 +53,14 @@ export async function handleNewAssistantMessage(
     const updateStatus = updateStatusUtil(channel, thread_ts);
     await updateStatus("is thinking...");
 
-    // Fetch user's profile including email and timezone from Slack
+    // Try to fetch the user's email from Slack
     let userEmail: string | null = null;
-    let userTimezoneOffices: string[] = [];
-    let timezonePrompt = "";
-
     if (user) {
-      const profile = await getUserProfile(user);
-      console.log("[DM] User profile:", profile);
-      userEmail = profile.email;
-
-      // Use same timezone logic as app mentions
-      const offices = getOfficeForTimezone(profile.tz, profile.tz_label);
-      userTimezoneOffices = offices;
-      console.log("[DM] Timezone-based offices:", offices);
-
-      if (offices.length === 1) {
-        // Single office for their timezone - use it directly
-        timezonePrompt = `The user's timezone automatically maps to ${offices[0]} office. Use this office for delivery without asking.`;
-      } else if (offices.length > 1) {
-        // Multiple offices for their timezone - ask them to choose
-        timezonePrompt = `The user's timezone matches multiple offices: ${offices.join(", ")}. Ask them to choose which office location they want for delivery from these options: ${offices.map(o => o + " Office").join(", ")}.`;
-      } else {
-        // No offices match their timezone - ask them to manually select
-        timezonePrompt = `The user's timezone doesn't match any of our office locations. Ask them to reply with their office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).`;
-      }
+      userEmail = await getUserEmail(user);
     }
 
     const messages = await getThread(channel, thread_ts, botUserId);
-    let result = await generateResponse(messages, updateStatus, userEmail ?? undefined, timezonePrompt);
+    let result = await generateResponse(messages, updateStatus, userEmail ?? undefined);
     console.log("Generated response for assistant message:", result);
 
     await client.chat.postMessage({
