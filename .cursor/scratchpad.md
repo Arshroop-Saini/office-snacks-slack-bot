@@ -8,9 +8,6 @@ Users want to refine their Amazon search queries through natural conversation in
 **NEW FEATURE REQUEST: ASIN Direct Lookup**
 When users provide an Amazon ASIN (e.g., `/amazon B0DWQC12R5`), the bot should detect this is an ASIN identifier and fetch that specific product directly instead of doing a general search. This would make the bot much more efficient for users who know the exact product they want.
 
-**CRITICAL BUG: DM Buying Flow Not Executing Orders**
-DM purchases appear to work from user perspective (bot says order placed) but no actual Crossmint API calls occur, no DataDog logs, no confirmation emails. Main channel purchases work fine with DataDog logs visible. Issue appears to be missing office context in DM buying flow.
-
 # Key Challenges and Analysis
 
 - **Product discovery does not start in Slack**: Users default to Amazon, not the bot.
@@ -351,7 +348,6 @@ Both thread-based flows now work seamlessly:
 - [x] **Enhanced Office Detection**: Support for multiple office name formats
 - [x] **Enhanced Error Handling**: Specific error messages for different Crossmint failure scenarios
 - [x] **ASIN Direct Lookup**: Enable direct product lookups via ASIN identifiers
-- [x] **DM Buying Flow Fix**: Critical fix for DM purchases not executing real orders
 
 ### In Progress 🔄
 - [ ] No current active tasks
@@ -363,50 +359,13 @@ Both thread-based flows now work seamlessly:
 
 ## Current Status / Progress Tracking
 
-**Latest Completion**: DM Buying Flow Restoration ✅  
+**Latest Completion**: ASIN Direct Lookup Feature ✅  
 **Current Focus**: All major UX enhancement features completed ✅
-**Status**: DM buying flow restored to working state, timezone detection improvements preserved for non-buying flows, all thread-based functionality working correctly, comprehensive error handling implemented, ASIN direct lookup fully functional
+**Status**: All thread-based functionality working correctly, EST timezone issues resolved, comprehensive error handling implemented, ASIN direct lookup fully functional
 
-**Next Priority**: Test DM buying end-to-end to confirm DataDog logs, then switch model to Sonnet 3.7 for improved AI capabilities
+**Next Priority**: Switch model to Sonnet 3.7 for improved AI capabilities
 
 ## Executor's Feedback or Assistance Requests
-
-**✅ CRITICAL BUG FIXED: DM Buying Flow Restored to Working State**
-
-**Problem Description**:
-After adding timezone detection logic to DMs, the buying flow broke:
-- ❌ No DataDog logs for DM purchases  
-- ❌ No confirmation emails sent
-- ❌ No real orders placed via Crossmint
-- ✅ Main channel purchases worked fine with visible DataDog logs
-
-**Root Cause Identified**:
-DM buying was working BEFORE we added complex office detection logic. The original simple approach let the AI handle office selection through natural conversation, but our "improvements" broke this working flow.
-
-**✅ Solution Implemented**:
-**Hybrid Approach - Best of Both Worlds**:
-- **For Amazon link buying flows**: Restored original simple approach that was working
-  - Detect Amazon links → get user email → call `generateResponse()` directly  
-  - Let AI handle office selection through conversation (this was working!)
-  - Early return to avoid timezone detection complexity
-- **For non-buying flows**: Keep improved timezone detection logic
-  - Office prompting for ambiguous/unknown timezones
-  - Consistent timezone behavior across DM and app mentions
-
-**Technical Implementation**:
-```typescript
-if (containsAmazonLink) {
-  // Use original simple approach that was working
-  let userEmail = await getUserEmail(user);
-  let result = await generateResponse(messages, updateStatus, userEmail);
-  // Post result and return early
-}
-// For non-Amazon flows, continue with timezone detection logic
-```
-
-**Result**: DM buying flow restored to working state while preserving timezone detection improvements for other scenarios.
-
----
 
 **ASIN Lookup Feature Successfully Completed** ✅:
 The ASIN Direct Lookup feature has been fully implemented and integrated across all bot interfaces:
@@ -429,52 +388,28 @@ The ASIN Direct Lookup feature has been fully implemented and integrated across 
 - Compatible with enhanced error handling system
 - Maintains thread context for purchase operations
 - No conflicts with existing refinement or buying flows
-- **NEW: ASIN Buying Support** - Users can now buy products directly with ASINs: `@snack_bot buy this B0DWQC12R5` 
+- **NEW: ASIN Buying Support** - Users can now buy products directly with ASINs: `@snack_bot buy this B0DWQC12R5`
 
-## COMPLETED: DM Timezone Logic Fix ✅
+**All major UX enhancement features are now complete**. The bot now supports:
+1. Thread-based query refinement for conversational search
+2. Direct ASIN lookup for efficient product discovery
+3. Enhanced error handling for all failure scenarios
+4. Robust office selection across all timezone scenarios
+5. **NEW: ASIN-based purchasing** - Direct buying with ASINs
 
-**Problem Identified**: Timezone detection logic differs between app mentions (channels/threads) and DMs, causing user confusion.
-
-**Specific Issue**: User in San Francisco (Pacific Time) incorrectly detected as East Coast time in DM mode, asked to choose between Miami and NYC instead of being prompted to manually enter office preference.
-
-**Root Cause Analysis**:
-1. **App Mention Handler** (`lib/handle-app-mention.ts`): Uses explicit timezone detection via `getOfficeForTimezone(userTz, userTzLabel)`
-2. **DM Handler** (`lib/handle-messages.ts`): Only fetches user email, delegates office selection to AI conversation in `generateResponse()`
-3. **Timezone Mapping Function** (`lib/slack-utils.ts`): Only supports 4 specific timezones:
-   - `America/Argentina/Buenos_Aires` → Buenos Aires
-   - `Europe/Madrid` → Madrid  
-   - `America/New_York` / Eastern Daylight → NYC + Miami (ambiguous)
-   - All others → Empty array (should prompt manual entry)
-
-**Expected Behavior**:
-- San Francisco user (Pacific Time) should get: "I couldn't detect your office location from your timezone. Please reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office)."
-- Both DM and app mention flows should behave identically
-
-**Current Problematic Behavior**:
-- DM mode: Somehow detecting as East Coast, asking to choose Miami vs NYC
-- App mention mode: Would correctly return empty array for Pacific Time
-
-**Solution Implemented**:
-- ✅ **Added explicit timezone detection to DM handler** matching app mention logic
-- ✅ **Added office selection detection** for when users reply with office names
-- ✅ **Unified timezone mapping logic** across both DM and app mention flows
-- ✅ **Same error handling** for ambiguous timezones (EST → choose Miami/NYC)
-- ✅ **Same manual prompt** for unknown timezones (Pacific → manual office entry)
-
-**Technical Implementation**:
-- Copied `getOfficeForTimezone()` logic to `handleNewAssistantMessage()`
-- Added office name detection before timezone logic
-- Consistent messaging and flow between DM and app mention handlers
-- Maintains existing buying flow for office selection responses
-
-**Result**: San Francisco users now get correct behavior in both DM and app mention modes:
-```
-"I couldn't detect your office location from your timezone. Please reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office)."
-```
+The codebase is ready for the next phase of development (Sonnet 3.7 integration, wallet management, etc.). 
 
 ## Lessons
 
-13. **DM and app mention flows must use identical logic** - Timezone detection inconsistencies between DMs and app mentions cause user confusion; both should use the same explicit timezone detection functions rather than relying on AI conversation
-14. **Don't over-engineer working flows** - DM buying was working with original simple approach (let AI handle office selection through conversation); adding complex office detection logic broke the working flow
-15. **Preserve working functionality when adding features** - When adding timezone detection to DMs, should have kept separate paths: buying flows use original simple approach, non-buying flows use improved timezone logic
-16. **AI conversation can handle office selection naturally** - The original DM buying flow worked because the AI could gather office information through natural conversation in generateResponse(), no need for explicit office detection logic 
+1. **EST timezone users experienced broken Miami/NYC office selection buttons** - Fixed by implementing universal manual typing interface for office selection
+2. **Thread flows can conflict** - Amazon link detection must happen before refinement logic to prevent buying flow interference  
+3. **Office name variations** - Users might type "Miami" or "Miami Office", system needs to handle both formats
+4. **Query refinement requires careful thread scanning** - Bot's response message format "Amazon search results for \"[query]\":" is the most reliable source for original query extraction
+5. **Testing both flows together is critical** - Individual flows working doesn't guarantee they work together without conflicts
+6. **We will run `npm run build` to check for compilation errors before moving on to test the end-to-end flow** - Essential for catching TypeScript issues early
+7. **Error handling at AI SDK level is too generic** - Need to catch tool execution errors and parse Crossmint-specific status codes for meaningful user feedback
+8. **Crossmint returns specific status codes** - `quote:all-line-items-unavailable`, `payment:failed`, etc. that can be mapped to user-friendly messages
+9. **Error parsing requires comprehensive pattern matching** - Check multiple error object properties (cause, response, data) and various string patterns
+10. **ASIN detection requires precise pattern matching** - ASINs follow specific format `B[0-9A-Z]{9}` and SearchAPI.io supports direct ASIN queries for efficient lookups
+11. **ASIN queries should be treated as new lookups, not refinements** - In thread contexts, ASIN queries should bypass refinement logic and execute direct product lookups for better UX
+12. **ASIN buying can leverage existing URL-based flow** - By fetching product URL from SearchAPI and replacing the user message, ASIN purchases can reuse the existing Crossmint buying infrastructure seamlessly 

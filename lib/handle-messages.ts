@@ -53,122 +53,35 @@ export async function handleNewAssistantMessage(
     const updateStatus = updateStatusUtil(channel, thread_ts);
     await updateStatus("is thinking...");
 
-    // Get the user's message for potential office selection detection
-    const threadMessages = await getThread(channel, thread_ts, botUserId);
-    const latestUserMessage = threadMessages.filter(msg => msg.role === 'user').pop();
-    const userMessageText = typeof latestUserMessage?.content === 'string' ? latestUserMessage.content : '';
-
-    // Check if user's message contains an Amazon link - if so, use original simple buying flow that was working
-    const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
-    const containsAmazonLink = amazonLinkPattern.test(userMessageText);
-    console.log("[DEBUG] DM Contains Amazon link:", containsAmazonLink);
-
-    if (containsAmazonLink) {
-      console.log("[DEBUG] DM Amazon link detected - using original simple buying flow that was working");
-      await updateStatus("Processing Amazon link for purchase...");
-
-      // Use original simple approach that was working: let AI handle everything through conversation
-      let userEmail: string | null = null;
-      if (user) {
-        userEmail = await getUserEmail(user);
-      }
-
-      const finalMessages = await getThread(channel, thread_ts, botUserId);
-      let result = await generateResponse(finalMessages, updateStatus, userEmail ?? undefined);
-      console.log("Generated response for assistant message:", result);
-
-      await client.chat.postMessage({
-        channel: channel,
-        thread_ts: thread_ts,
-        text: result,
-        unfurl_links: false,
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: result,
-            },
-          },
-        ],
-      });
-
-      await updateStatus("");
-      return; // Exit early for buying flows - use original working approach
-    }
-
-    // Office detection logic (copied from app mention handler)
+    // Fetch user's profile including email and timezone from Slack
     let userEmail: string | null = null;
-    let userTz: string | null = null;
-    let userTzLabel: string | null = null;
-    let office: string | null = null;
+    let userTimezoneOffices: string[] = [];
+    let timezonePrompt = "";
 
-    // First check if office is mentioned in the message (for buying flows)
-    const officeNames = [
-      "Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office",
-      "Miami", "New York", "Buenos Aires", "Madrid"
-    ];
-    let officeFromMessage: string | undefined = undefined;
-    for (const name of officeNames) {
-      if (userMessageText.toLowerCase().includes(name.toLowerCase())) {
-        // Normalize to full office name (same logic as app mention handler)
-        if (name.toLowerCase().includes("miami")) {
-          officeFromMessage = "Miami Office";
-        } else if (name.toLowerCase().includes("new york")) {
-          officeFromMessage = "New York Office";
-        } else if (name.toLowerCase().includes("buenos aires")) {
-          officeFromMessage = "Buenos Aires Office";
-        } else if (name.toLowerCase().includes("madrid")) {
-          officeFromMessage = "Madrid Office";
-        }
-        break;
-      }
-    }
-
-    if (officeFromMessage) {
-      office = officeFromMessage;
-      console.log("[DEBUG] DM Office from message:", office);
-    } else if (user) {
+    if (user) {
       const profile = await getUserProfile(user);
-      console.log("[DEBUG] DM user profile:", profile);
-      userEmail = profile.email || null;
-      userTz = profile.tz;
-      userTzLabel = profile.tz_label;
+      console.log("[DM] User profile:", profile);
+      userEmail = profile.email;
 
-      // Apply same timezone detection logic as app mention handler
-      const offices = getOfficeForTimezone(userTz, userTzLabel);
-      console.log("[DEBUG] DM Office candidates:", offices);
+      // Use same timezone logic as app mentions
+      const offices = getOfficeForTimezone(profile.tz, profile.tz_label);
+      userTimezoneOffices = offices;
+      console.log("[DM] Timezone-based offices:", offices);
 
       if (offices.length === 1) {
-        office = offices[0];
-        console.log("[DEBUG] DM Single office detected:", office);
+        // Single office for their timezone - use it directly
+        timezonePrompt = `The user's timezone automatically maps to ${offices[0]} office. Use this office for delivery without asking.`;
       } else if (offices.length > 1) {
-        // Ambiguous: prompt user to choose by typing (same as app mention handler)
-        await client.chat.postMessage({
-          channel,
-          thread_ts: thread_ts,
-          text: `We have offices in both New York City and Miami for your timezone. Please reply with your office location (choose from: Miami Office, New York Office).`,
-        });
-        return;
+        // Multiple offices for their timezone - ask them to choose
+        timezonePrompt = `The user's timezone matches multiple offices: ${offices.join(", ")}. Ask them to choose which office location they want for delivery from these options: ${offices.map(o => o + " Office").join(", ")}.`;
       } else {
-        // Not in any known timezone: ask user to reply with their office (same as app mention handler)
-        await client.chat.postMessage({
-          channel,
-          thread_ts: thread_ts,
-          text: `I couldn't detect your office location from your timezone. Please reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).`,
-        });
-        return;
+        // No offices match their timezone - ask them to manually select
+        timezonePrompt = `The user's timezone doesn't match any of our office locations. Ask them to reply with their office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).`;
       }
     }
 
-    // After office is determined, always fetch user email if not already set (same as app mention handler)
-    if (!userEmail && user) {
-      const profile = await getUserProfile(user);
-      userEmail = profile.email || null;
-    }
-
-    const finalMessages = await getThread(channel, thread_ts, botUserId);
-    let result = await generateResponse(finalMessages, updateStatus, userEmail ?? undefined);
+    const messages = await getThread(channel, thread_ts, botUserId);
+    let result = await generateResponse(messages, updateStatus, userEmail ?? undefined, timezonePrompt);
     console.log("Generated response for assistant message:", result);
 
     await client.chat.postMessage({
