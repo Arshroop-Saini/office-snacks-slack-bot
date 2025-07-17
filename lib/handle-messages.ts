@@ -58,18 +58,44 @@ export async function handleNewAssistantMessage(
     const latestUserMessage = threadMessages.filter(msg => msg.role === 'user').pop();
     const userMessageText = typeof latestUserMessage?.content === 'string' ? latestUserMessage.content : '';
 
-    // Check if user's message contains an Amazon link (CRITICAL: same logic as app mention handler)
+    // Check if user's message contains an Amazon link - if so, use original simple buying flow that was working
     const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
     const containsAmazonLink = amazonLinkPattern.test(userMessageText);
     console.log("[DEBUG] DM Contains Amazon link:", containsAmazonLink);
 
     if (containsAmazonLink) {
-      console.log("[DEBUG] DM Amazon link detected - processing for purchase (same as app mention)");
+      console.log("[DEBUG] DM Amazon link detected - using original simple buying flow that was working");
       await updateStatus("Processing Amazon link for purchase...");
-      // Continue to office detection - don't skip it!
-    }
 
-    // Note: Removed early return for office selection - let it continue through full office detection logic like app mention handler
+      // Use original simple approach that was working: let AI handle everything through conversation
+      let userEmail: string | null = null;
+      if (user) {
+        userEmail = await getUserEmail(user);
+      }
+
+      const finalMessages = await getThread(channel, thread_ts, botUserId);
+      let result = await generateResponse(finalMessages, updateStatus, userEmail ?? undefined);
+      console.log("Generated response for assistant message:", result);
+
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: thread_ts,
+        text: result,
+        unfurl_links: false,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: result,
+            },
+          },
+        ],
+      });
+
+      await updateStatus("");
+      return; // Exit early for buying flows - use original working approach
+    }
 
     // Office detection logic (copied from app mention handler)
     let userEmail: string | null = null;
