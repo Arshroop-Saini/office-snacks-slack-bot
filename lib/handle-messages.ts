@@ -69,42 +69,7 @@ export async function handleNewAssistantMessage(
       // Continue to office detection - don't skip it!
     }
 
-    // Check if this looks like an office selection (from buying flow)
-    const officeSelectionNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
-    const looksLikeOfficeSelection = officeSelectionNames.some(office =>
-      userMessageText.toLowerCase().includes(office.toLowerCase())
-    );
-    console.log("[DEBUG] DM Looks like office selection:", looksLikeOfficeSelection);
-
-    if (looksLikeOfficeSelection) {
-      console.log("[DEBUG] DM Office selection detected - proceeding with buying flow");
-      // Skip timezone detection and proceed with normal AI conversation for buying flow
-      let userEmail: string | null = null;
-      if (user) {
-        userEmail = await getUserEmail(user);
-      }
-      let result = await generateResponse(threadMessages, updateStatus, userEmail ?? undefined);
-      console.log("Generated response for assistant message:", result);
-
-      await client.chat.postMessage({
-        channel: channel,
-        thread_ts: thread_ts,
-        text: result,
-        unfurl_links: false,
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: result,
-            },
-          },
-        ],
-      });
-
-      await updateStatus("");
-      return;
-    }
+    // Note: Removed early return for office selection - let it continue through full office detection logic like app mention handler
 
     // Office detection logic (copied from app mention handler)
     let userEmail: string | null = null;

@@ -8,6 +8,9 @@ Users want to refine their Amazon search queries through natural conversation in
 **NEW FEATURE REQUEST: ASIN Direct Lookup**
 When users provide an Amazon ASIN (e.g., `/amazon B0DWQC12R5`), the bot should detect this is an ASIN identifier and fetch that specific product directly instead of doing a general search. This would make the bot much more efficient for users who know the exact product they want.
 
+**CRITICAL BUG: DM Buying Flow Not Executing Orders**
+DM purchases appear to work from user perspective (bot says order placed) but no actual Crossmint API calls occur, no DataDog logs, no confirmation emails. Main channel purchases work fine with DataDog logs visible. Issue appears to be missing office context in DM buying flow.
+
 # Key Challenges and Analysis
 
 - **Product discovery does not start in Slack**: Users default to Amazon, not the bot.
@@ -348,6 +351,7 @@ Both thread-based flows now work seamlessly:
 - [x] **Enhanced Office Detection**: Support for multiple office name formats
 - [x] **Enhanced Error Handling**: Specific error messages for different Crossmint failure scenarios
 - [x] **ASIN Direct Lookup**: Enable direct product lookups via ASIN identifiers
+- [x] **DM Buying Flow Fix**: Critical fix for DM purchases not executing real orders
 
 ### In Progress 🔄
 - [ ] No current active tasks
@@ -366,6 +370,36 @@ Both thread-based flows now work seamlessly:
 **Next Priority**: Switch model to Sonnet 3.7 for improved AI capabilities
 
 ## Executor's Feedback or Assistance Requests
+
+**✅ CRITICAL BUG FIXED: DM Buying Flow Not Executing Real Orders**
+
+**Problem Description**:
+DM purchases appeared to work from a user perspective (bot said order placed) but no actual Crossmint API calls occurred:
+- ❌ No DataDog logs for DM purchases
+- ❌ No confirmation emails sent
+- ❌ No real orders placed via Crossmint
+- ✅ Main channel purchases worked fine with visible DataDog logs
+
+**Root Cause Identified**:
+The DM handler (`lib/handle-messages.ts`) had Amazon link detection logic but a critical flaw:
+1. **Detected office selection** correctly
+2. **Returned early** and skipped all office detection logic
+3. **Missing office context** when calling `generateResponse()`
+4. **AI could not execute Crossmint tools** properly without office address information
+
+**Critical Code Difference**:
+- **App Mention Handler**: Amazon link detection → continue to office detection → `generateResponse()` with office context
+- **DM Handler (BROKEN)**: Amazon link detection → early return → `generateResponse()` without office context
+
+**✅ Fix Implemented**:
+- Removed the problematic early return in DM handler that was skipping office detection
+- DM handler now follows the same pattern as app mention handler
+- Both flows now: Amazon link detection → office detection → `generateResponse()` with full context
+- TypeScript compilation successful with no errors
+
+**Result**: DM buying flow now has complete office context and should execute Crossmint tools properly, matching the working channel chat behavior.
+
+---
 
 **ASIN Lookup Feature Successfully Completed** ✅:
 The ASIN Direct Lookup feature has been fully implemented and integrated across all bot interfaces:
@@ -388,16 +422,7 @@ The ASIN Direct Lookup feature has been fully implemented and integrated across 
 - Compatible with enhanced error handling system
 - Maintains thread context for purchase operations
 - No conflicts with existing refinement or buying flows
-- **NEW: ASIN Buying Support** - Users can now buy products directly with ASINs: `@snack_bot buy this B0DWQC12R5`
-
-**All major UX enhancement features are now complete**. The bot now supports:
-1. Thread-based query refinement for conversational search
-2. Direct ASIN lookup for efficient product discovery
-3. Enhanced error handling for all failure scenarios
-4. Robust office selection across all timezone scenarios
-5. **NEW: ASIN-based purchasing** - Direct buying with ASINs
-
-The codebase is ready for the next phase of development (Sonnet 3.7 integration, wallet management, etc.). 
+- **NEW: ASIN Buying Support** - Users can now buy products directly with ASINs: `@snack_bot buy this B0DWQC12R5` 
 
 ## COMPLETED: DM Timezone Logic Fix ✅
 
@@ -442,4 +467,6 @@ The codebase is ready for the next phase of development (Sonnet 3.7 integration,
 
 ## Lessons
 
-13. **DM and app mention flows must use identical logic** - Timezone detection inconsistencies between DMs and app mentions cause user confusion; both should use the same explicit timezone detection functions rather than relying on AI conversation 
+13. **DM and app mention flows must use identical logic** - Timezone detection inconsistencies between DMs and app mentions cause user confusion; both should use the same explicit timezone detection functions rather than relying on AI conversation
+14. **Missing Amazon link detection in DMs prevented Crossmint tool execution** - DM handler must include Amazon link detection and complete office detection logic identical to app mention handler; early returns bypass critical context needed for tools to execute
+15. **Office detection logic must be complete in both flows for proper buying context** - Any early returns that skip office detection will cause the AI to lack proper context when attempting to execute Crossmint purchase tools; both DM and app mention handlers need full office detection flow 
