@@ -8,6 +8,9 @@ Users want to refine their Amazon search queries through natural conversation in
 **NEW FEATURE REQUEST: ASIN Direct Lookup**
 When users provide an Amazon ASIN (e.g., `/amazon B0DWQC12R5`), the bot should detect this is an ASIN identifier and fetch that specific product directly instead of doing a general search. This would make the bot much more efficient for users who know the exact product they want.
 
+**NEW FEATURE REQUEST: Order History Lookup**
+Users want to easily see products they've previously bought through the bot. A new `/orders` slash command should fetch and display their purchase history using Crossmint's orders API, showing order details, status, and purchase dates in a user-friendly Slack format.
+
 # Key Challenges and Analysis
 
 - **Product discovery does not start in Slack**: Users default to Amazon, not the bot.
@@ -37,6 +40,14 @@ When users provide an Amazon ASIN (e.g., `/amazon B0DWQC12R5`), the bot should d
 - **Error Handling**: Handle invalid ASINs, products not found, or region-specific availability
 - **User Experience**: Instant direct product access vs. search result pagination
 
+**Order History Lookup Analysis:**
+- **API Integration**: Crossmint orders endpoint `/api/2025-06-15/orders?recipient={email}&page={page}&perPage={perPage}`
+- **Email Resolution**: Reuse existing Slack email fetching logic from `getUserEmail()` and `getUserProfile()`
+- **Slash Command Structure**: Follow existing `/amazon` command pattern in `api/command.ts`
+- **Response Formatting**: Display orders in Slack blocks with product details, dates, and status
+- **Pagination Strategy**: Handle multiple pages of order history with navigation controls
+- **Error Handling**: No orders found, API failures, email resolution issues
+
 # High-level Task Breakdown
 
 ## V0 (Reliability & Core Features)
@@ -48,7 +59,8 @@ When users provide an Amazon ASIN (e.g., `/amazon B0DWQC12R5`), the bot should d
    - [x] Integrate Amazon product search API or scraping
    - [x] Return product options with preview image, cost, ratings, ETA
    - [x] Allow user to pick a product to purchase
-   - [ ] **ASIN Direct Lookup** 🔄 - Enable direct ASIN queries for specific product fetching
+   - [x] **ASIN Direct Lookup** ✅ - Enable direct ASIN queries for specific product fetching
+   - [ ] **Order History Lookup** 🔄 - Enable users to view their purchase history via `/orders` command
 3. **Channel support**
    - [ ] Make bot work in channels, not just DMs
 4. **Switch model to Sonnet 3.7**
@@ -350,7 +362,7 @@ Both thread-based flows now work seamlessly:
 - [x] **ASIN Direct Lookup**: Enable direct product lookups via ASIN identifiers
 
 ### In Progress 🔄
-- [ ] No current active tasks
+- [ ] **Order History Lookup**: `/orders` slash command to show user's purchase history
 
 ### Pending 📋  
 - [ ] Switch model to Sonnet 3.7
@@ -359,57 +371,197 @@ Both thread-based flows now work seamlessly:
 
 ## Current Status / Progress Tracking
 
-**Latest Completion**: ASIN Direct Lookup Feature ✅  
-**Current Focus**: All major UX enhancement features completed ✅
-**Status**: All thread-based functionality working correctly, EST timezone issues resolved, comprehensive error handling implemented, ASIN direct lookup fully functional
+**Latest Completion**: ASIN-based Buying Enhancement ✅  
+**Current Focus**: Order History Lookup Feature Planning ✅
+**Status**: All thread-based functionality working correctly, EST timezone issues resolved, comprehensive error handling implemented, ASIN direct lookup and buying fully functional
 
-**Next Priority**: Switch model to Sonnet 3.7 for improved AI capabilities
+**Next Priority**: Order History implementation to complete user purchase management experience
 
 ## Executor's Feedback or Assistance Requests
 
-**ASIN Lookup Feature Successfully Completed** ✅:
-The ASIN Direct Lookup feature has been fully implemented and integrated across all bot interfaces:
+**Order History Feature Ready for Implementation** 🚀:
+The planning phase for Order History lookup is complete with comprehensive technical analysis. Ready to proceed with systematic implementation:
 
-**✅ Core Functionality Implemented**:
-- **Slash Command**: `/amazon B0DWQC12R5` detects ASIN and shows single product details
-- **Thread Support**: ASIN queries in threads work as direct lookups (not refinements)
-- **Error Handling**: Invalid ASIN format and not-found cases have specific user messages
-- **Single Product Display**: Optimized formatting without pagination for ASIN results
+**✅ Planning Complete**:
+- **API Integration Strategy**: Crossmint orders endpoint `/api/2025-06-15/orders` fully analyzed
+- **Infrastructure Reuse**: Leveraging existing slash command, email fetching, and pagination systems
+- **Implementation Phases**: 5 detailed phases with clear success criteria defined
+- **Technical Design**: Complete API client, formatting, and error handling patterns designed
 
-**✅ Technical Implementation**:
-- ASIN pattern detection using regex `^B[0-9A-Z]{9}$`
-- Validation and normalization functions
-- Integrated with existing SearchAPI.io infrastructure
-- Consistent visual formatting across slash commands and threads
-- Proper error handling with user-friendly messages
+**🔧 Implementation Ready**:
+1. **Phase 1**: Crossmint Orders API Integration
+2. **Phase 2**: `/orders` Slash Command Implementation  
+3. **Phase 3**: Order Display Formatting
+4. **Phase 4**: Error Handling & Edge Cases
+5. **Phase 5**: Integration Testing & Polish
 
-**✅ Integration Points**:
-- Works seamlessly with existing buying flow (threads → office selection → purchase)
-- Compatible with enhanced error handling system
-- Maintains thread context for purchase operations
-- No conflicts with existing refinement or buying flows
-- **NEW: ASIN Buying Support** - Users can now buy products directly with ASINs: `@snack_bot buy this B0DWQC12R5`
+**🎯 Key Benefits**:
+- **User Value**: Easy access to purchase history and order tracking
+- **Infrastructure Reuse**: Leverages existing components for faster development
+- **Consistent UX**: Matches existing command patterns and error handling
+- **Scalable Design**: Pagination and API integration ready for high usage
 
-**All major UX enhancement features are now complete**. The bot now supports:
-1. Thread-based query refinement for conversational search
-2. Direct ASIN lookup for efficient product discovery
-3. Enhanced error handling for all failure scenarios
-4. Robust office selection across all timezone scenarios
-5. **NEW: ASIN-based purchasing** - Direct buying with ASINs
+**Previous Success - ASIN Enhancement** ✅:
+Successfully implemented complete ASIN support including:
+- Direct ASIN lookup: `/amazon B0DWQC12R5` 
+- ASIN-based buying: `@snack_bot buy this B0DWQC12R5`
+- Thread integration and comprehensive error handling
 
-The codebase is ready for the next phase of development (Sonnet 3.7 integration, wallet management, etc.). 
+All technical details, patterns, and implementation approaches have been defined. The Order History feature integrates cleanly with existing systems without breaking current functionality.
 
-## Lessons
+## PLANNED: Order History Lookup Feature
 
-1. **EST timezone users experienced broken Miami/NYC office selection buttons** - Fixed by implementing universal manual typing interface for office selection
-2. **Thread flows can conflict** - Amazon link detection must happen before refinement logic to prevent buying flow interference  
-3. **Office name variations** - Users might type "Miami" or "Miami Office", system needs to handle both formats
-4. **Query refinement requires careful thread scanning** - Bot's response message format "Amazon search results for \"[query]\":" is the most reliable source for original query extraction
-5. **Testing both flows together is critical** - Individual flows working doesn't guarantee they work together without conflicts
-6. **We will run `npm run build` to check for compilation errors before moving on to test the end-to-end flow** - Essential for catching TypeScript issues early
-7. **Error handling at AI SDK level is too generic** - Need to catch tool execution errors and parse Crossmint-specific status codes for meaningful user feedback
-8. **Crossmint returns specific status codes** - `quote:all-line-items-unavailable`, `payment:failed`, etc. that can be mapped to user-friendly messages
-9. **Error parsing requires comprehensive pattern matching** - Check multiple error object properties (cause, response, data) and various string patterns
-10. **ASIN detection requires precise pattern matching** - ASINs follow specific format `B[0-9A-Z]{9}` and SearchAPI.io supports direct ASIN queries for efficient lookups
-11. **ASIN queries should be treated as new lookups, not refinements** - In thread contexts, ASIN queries should bypass refinement logic and execute direct product lookups for better UX
-12. **ASIN buying can leverage existing URL-based flow** - By fetching product URL from SearchAPI and replacing the user message, ASIN purchases can reuse the existing Crossmint buying infrastructure seamlessly 
+### Technical Architecture Overview
+
+**Current Infrastructure Analysis:**
+- ✅ Slash command structure established in `api/command.ts` (`/amazon` command)
+- ✅ Email fetching logic exists: `getUserEmail()` and `getUserProfile()` in `slack-utils.ts`
+- ✅ Slack block formatting patterns in `formatProductBlocksStateless()`
+- ✅ Pagination controls implementation in `getPaginationElements()`
+- ✅ Error handling patterns established throughout codebase
+- ✅ Enhanced error parsing for user-friendly messages in `generate-response.ts`
+
+**Crossmint Orders API Integration:**
+- **Endpoint**: `/api/2025-06-15/orders?recipient={email}&page={page}&perPage={perPage}`
+- **Authentication**: Use existing `CROSSMINT_API_KEY` environment variable
+- **Response Format**: JSON with order objects containing product details, dates, status
+- **Pagination**: Built-in page/perPage parameters for handling large order histories
+
+**Reusable Components Strategy:**
+1. **Slash Command Framework**: Extend existing command handler in `api/command.ts`
+2. **Email Resolution**: Reuse `getUserEmail(user)` pattern from app mentions
+3. **Slack Formatting**: Adapt `formatProductBlocksStateless()` for order display
+4. **Pagination Logic**: Reuse `getPaginationElements()` for order history navigation  
+5. **Error Handling**: Extend existing Crossmint error parsing patterns
+
+### Implementation Phases
+
+**Phase 1: Crossmint Orders API Integration** 
+- [ ] Create new Crossmint orders API client function
+- [ ] Add order data type definitions (Order, OrderStatus, etc.)
+- [ ] Implement API call with error handling and pagination
+- [ ] Test API integration with valid email addresses
+- **Success Criteria**: Successfully fetch order data from Crossmint API
+
+**Phase 2: Slash Command Implementation**
+- [ ] Add `/orders` command handler to `api/command.ts`
+- [ ] Integrate email resolution from Slack user ID
+- [ ] Handle command parsing and parameter validation
+- [ ] Add command routing logic alongside existing `/amazon` command
+- **Success Criteria**: `/orders` command correctly processes and routes requests
+
+**Phase 3: Order Display Formatting**
+- [ ] Create `formatOrderBlocksStateless()` function for Slack display
+- [ ] Design order card layout with product details, date, status
+- [ ] Implement pagination controls for order history navigation
+- [ ] Add header with user email and total order count
+- **Success Criteria**: Orders display clearly with all relevant information
+
+**Phase 4: Error Handling & Edge Cases**
+- [ ] Handle cases where user email is not found
+- [ ] Handle empty order history with helpful messaging
+- [ ] Handle Crossmint API errors with specific user messages
+- [ ] Test pagination edge cases (first/last page, single page)
+- **Success Criteria**: Comprehensive error handling for all failure scenarios
+
+**Phase 5: Integration Testing & Polish**
+- [ ] Test command with various user accounts and order histories
+- [ ] Verify pagination works across multiple pages
+- [ ] Test error scenarios and user experience
+- [ ] Integration with existing slash command infrastructure
+- **Success Criteria**: End-to-end functionality works reliably for all users
+
+### Technical Implementation Details
+
+**Crossmint API Client:**
+```typescript
+interface CrossmintOrder {
+  id: string;
+  status: string;
+  createdAt: string;
+  total: string;
+  currency: string;
+  recipient: string;
+  lineItems: {
+    productName: string;
+    quantity: number;
+    price: string;
+    productUrl?: string;
+  }[];
+}
+
+async function fetchUserOrders(email: string, page: number = 1, perPage: number = 10) {
+  const apiKey = process.env.CROSSMINT_API_KEY;
+  const response = await fetch(
+    `https://api.crossmint.com/api/2025-06-15/orders?recipient=${encodeURIComponent(email)}&page=${page}&perPage=${perPage}`,
+    { headers: { 'Authorization': `Bearer ${apiKey}` } }
+  );
+  return response.json();
+}
+```
+
+**Order Display Format:**
+```typescript
+function formatOrderBlocksStateless(orders: CrossmintOrder[], page: number, totalPages: number, userEmail: string) {
+  return [
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*Order History for:* ${userEmail}  |  *Page:* ${page} of ${totalPages}` }
+    },
+    ...orders.map(order => ({
+      type: "section",
+      text: {
+        type: "mrkdwn", 
+        text: `*Order #${order.id}*\n*Date:* ${formatDate(order.createdAt)}\n*Status:* ${order.status}\n*Total:* ${order.total} ${order.currency}\n*Items:* ${order.lineItems.map(item => item.productName).join(', ')}`
+      }
+    })),
+    { type: "actions", elements: getPaginationElements(`orders:${userEmail}`, page, totalPages) }
+  ];
+}
+```
+
+**Slash Command Integration:**
+```typescript
+// In api/command.ts - extend existing command handling
+if (params.command === "/orders") {
+  const userId = params.user_id;
+  const userEmail = await getUserEmail(userId);
+  
+  if (!userEmail) {
+    return errorResponse("Could not retrieve your email address for order lookup.");
+  }
+  
+  const { orders, pagination } = await fetchUserOrders(userEmail, 1, 5);
+  const blocks = formatOrderBlocksStateless(orders, 1, pagination.totalPages, userEmail);
+  
+  return slackResponse("in_channel", `Your order history:`, blocks);
+}
+```
+
+**Error Handling Scenarios:**
+1. **No Email Found**: "❌ Could not retrieve your email address. Please ensure your Slack profile has an email configured."
+2. **No Orders Found**: "📦 No previous orders found for your account. Start shopping with `/amazon [search query]`!"
+3. **API Error**: "❌ Unable to retrieve order history. Please try again later or contact support."
+4. **Pagination Error**: "❌ Error loading page. Please try navigating to a different page."
+
+### Integration Points
+
+**Slash Command Extension:**
+- Extend existing command router in `api/command.ts`
+- Add `/orders` alongside `/amazon` command processing
+- Reuse form data parsing and response formatting patterns
+
+**Email Resolution Integration:**
+- Leverage existing `getUserEmail()` function from Slack utilities
+- Handle email resolution errors with existing patterns
+- Maintain user privacy and data handling standards
+
+**Pagination System Integration:**
+- Extend existing pagination button system for orders
+- Reuse `getPaginationElements()` with order-specific parameters
+- Handle order pagination alongside Amazon search pagination
+
+**Error Handling Integration:**
+- Extend existing Crossmint error parsing in `generate-response.ts`
+- Add order-specific error patterns and user messages
+- Maintain consistent error experience across all features 
