@@ -104,7 +104,10 @@ function formatOrderBlocksStateless(orders: CrossmintOrder[], page: number, tota
     } else {
         for (const order of orders) {
             const orderDate = new Date(order.createdAt).toLocaleDateString();
-            const itemsList = order.lineItems.map(item => `${item.quantity}x ${item.productName}`).join(', ');
+            // Safety check for lineItems
+            const itemsList = order.lineItems && order.lineItems.length > 0
+                ? order.lineItems.map(item => `${item.quantity || 1}x ${item.productName || 'Unknown Item'}`).join(', ')
+                : 'No items listed';
 
             blocks.push({
                 type: "section",
