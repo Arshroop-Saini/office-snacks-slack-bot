@@ -1,21 +1,26 @@
 import { z } from "zod";
 
-// Order data types based on Crossmint API
-interface CrossmintOrderLineItem {
-    productName: string;
-    quantity: number;
-    price: string;
-    productUrl?: string;
-}
-
+// Order data types based on actual Crossmint API response
 interface CrossmintOrder {
-    id: string;
-    status: string;
-    createdAt: string;
-    total: string;
-    currency: string;
+    topology: string;
+    orderId: string;
     recipient: string;
-    lineItems: CrossmintOrderLineItem[];
+    quantity: number;
+    paymentMethod: string;
+    paymentStatus: string;
+    totalPrice: {
+        amount: number;
+        currency: string;
+    };
+    deliveryStatus: string;
+    createdAt: string;
+    origin: string;
+    clientId: string;
+    chain: string;
+    totalSaleQuote: {
+        amount: number;
+        currency: string;
+    };
 }
 
 interface CrossmintOrdersResponse {
@@ -89,13 +94,7 @@ export const crossmintOrdersTool = {
             }
 
             const data = JSON.parse(responseBody);
-            console.log(`[CROSSMINT ORDERS] Raw API response:`, JSON.stringify(data, null, 2));
             console.log(`[CROSSMINT ORDERS] Successfully fetched ${data.orders?.length || 0} orders`);
-
-            // Log first order structure for debugging
-            if (data.orders && data.orders.length > 0) {
-                console.log(`[CROSSMINT ORDERS] First order structure:`, JSON.stringify(data.orders[0], null, 2));
-            }
 
             // Ensure we have the expected response structure
             return {
@@ -104,7 +103,7 @@ export const crossmintOrdersTool = {
                     page: data.pagination?.page || page,
                     perPage: data.pagination?.perPage || perPage,
                     totalPages: data.pagination?.totalPages || 1,
-                    totalOrders: data.pagination?.totalOrders || (data.orders?.length || 0)
+                    totalOrders: data.pagination?.total || (data.orders?.length || 0)
                 }
             };
 
@@ -122,4 +121,4 @@ export const crossmintOrdersTool = {
 };
 
 // Export types for use in other files
-export type { CrossmintOrder, CrossmintOrderLineItem, CrossmintOrdersResponse }; 
+export type { CrossmintOrder, CrossmintOrdersResponse }; 

@@ -83,6 +83,30 @@ function getPaginationElements(query: string, page: number, totalPages: number, 
     return elements;
 }
 
+// Order-specific pagination buttons (separate from Amazon search)
+function getOrderPaginationElements(userEmail: string, page: number, totalPages: number, loading: boolean = false) {
+    const elements = [];
+    if (page > 1) {
+        elements.push({
+            type: "button",
+            text: { type: "plain_text", text: "Back" },
+            value: JSON.stringify({ userEmail, page: page - 1 }),
+            action_id: "orders_back_page",
+            ...(loading ? { style: "danger", disabled: true } : {})
+        });
+    }
+    if (page < totalPages) {
+        elements.push({
+            type: "button",
+            text: { type: "plain_text", text: "Next" },
+            value: JSON.stringify({ userEmail, page: page + 1 }),
+            action_id: "orders_next_page",
+            ...(loading ? { style: "danger", disabled: true } : {})
+        });
+    }
+    return elements;
+}
+
 // Order formatting function (Phase 3 implementation)
 function formatOrderBlocksStateless(orders: CrossmintOrder[], page: number, totalPages: number, userEmail: string, loading: boolean = false) {
     const blocks = [];
@@ -104,24 +128,30 @@ function formatOrderBlocksStateless(orders: CrossmintOrder[], page: number, tota
     } else {
         for (const order of orders) {
             const orderDate = new Date(order.createdAt).toLocaleDateString();
-            // Safety check for lineItems
-            const itemsList = order.lineItems && order.lineItems.length > 0
-                ? order.lineItems.map(item => `${item.quantity || 1}x ${item.productName || 'Unknown Item'}`).join(', ')
-                : 'No items listed';
+            const orderTime = new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            // Format status combining payment and delivery status
+            const statusText = `${order.paymentStatus} / ${order.deliveryStatus}`;
+
+            // Format total price
+            const totalText = `$${order.totalPrice.amount} ${order.totalPrice.currency.toUpperCase()}`;
+
+            // Format items info (since no individual product names, use origin and quantity)
+            const itemsText = `${order.quantity}x ${order.origin} item${order.quantity > 1 ? 's' : ''}`;
 
             blocks.push({
                 type: "section",
                 text: {
                     type: "mrkdwn",
-                    text: `*Order #${order.id}*\n*Date:* ${orderDate}\n*Status:* ${order.status}\n*Total:* ${order.total} ${order.currency}\n*Items:* ${itemsList}`,
+                    text: `*Order #${order.orderId.slice(0, 8)}...*\n*Date:* ${orderDate} at ${orderTime}\n*Status:* ${statusText}\n*Total:* ${totalText}\n*Items:* ${itemsText}\n*Payment:* ${order.paymentMethod.toUpperCase()}`,
                 },
             });
             blocks.push({ type: "divider" });
         }
     }
 
-    // Pagination controls (reusing existing function)
-    const elements = getPaginationElements(`orders:${userEmail}`, page, totalPages, loading);
+    // Pagination controls for orders (separate from Amazon)
+    const elements = getOrderPaginationElements(userEmail, page, totalPages, loading);
     if (elements.length > 0) {
         blocks.push({ type: "actions", elements });
     }
@@ -408,55 +438,63 @@ export async function POST(request: Request) {
                     });
                 }
                 const responseUrl = payload.response_url;
+                // Handle Amazon search pagination (original logic preserved)
                 if (action.action_id === "next_page" || action.action_id === "back_page") {
                     setTimeout(async () => {
                         try {
                             const { query, page } = parsedValue;
                             const perPage = 5;
-
-                            // Check if this is orders pagination or Amazon search pagination
-                            if (query.startsWith("orders:")) {
-                                // Handle orders pagination
-                                const userEmail = query.replace("orders:", "");
-                                console.log(`[COMMAND] (async) Loading orders page ${page} for email: ${userEmail}`);
-
-                                const { orders, pagination: orderPagination } = await crossmintOrdersTool.execute({
-                                    email: userEmail,
-                                    page,
-                                    perPage
-                                });
-
-                                const blocks = formatOrderBlocksStateless(orders, orderPagination.page, orderPagination.totalPages, userEmail);
-                                const responseBody = {
-                                    response_type: "in_channel",
-                                    replace_original: true,
-                                    blocks,
-                                };
-                                console.log(`[COMMAND] (async) Responding to orders ${action.action_id} with page ${page}`);
-                                await fetch(responseUrl, {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify(responseBody),
-                                });
-                            } else {
-                                // Handle Amazon search pagination
-                                const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                                const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
-                                const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
-                                const responseBody = {
-                                    response_type: "in_channel",
-                                    replace_original: true,
-                                    blocks,
-                                };
-                                console.log(`[COMMAND] (async) Responding to Amazon ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
-                                await fetch(responseUrl, {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify(responseBody),
-                                });
-                            }
+                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
+                            const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
+                            const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
+                            const responseBody = {
+                                response_type: "in_channel",
+                                replace_original: true,
+                                blocks,
+                            };
+                            console.log(`[COMMAND] (async) Responding to Amazon ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
+                            await fetch(responseUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(responseBody),
+                            });
                         } catch (err) {
-                            console.error(`[COMMAND] (async) Error in ${action.action_id}:`, err);
+                            console.error(`[COMMAND] (async) Error in Amazon ${action.action_id}:`, err);
+                        }
+                    }, 0);
+                    return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
+                // Handle orders pagination (completely separate logic)
+                else if (action.action_id === "orders_next_page" || action.action_id === "orders_back_page") {
+                    setTimeout(async () => {
+                        try {
+                            const { userEmail, page } = parsedValue;
+                            const perPage = 5;
+                            console.log(`[COMMAND] (async) Loading orders page ${page} for email: ${userEmail}`);
+
+                            const { orders, pagination: orderPagination } = await crossmintOrdersTool.execute({
+                                email: userEmail,
+                                page,
+                                perPage
+                            });
+
+                            const blocks = formatOrderBlocksStateless(orders, orderPagination.page, orderPagination.totalPages, userEmail);
+                            const responseBody = {
+                                response_type: "in_channel",
+                                replace_original: true,
+                                blocks,
+                            };
+                            console.log(`[COMMAND] (async) Responding to orders ${action.action_id} with page ${page}`);
+                            await fetch(responseUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(responseBody),
+                            });
+                        } catch (err) {
+                            console.error(`[COMMAND] (async) Error in orders ${action.action_id}:`, err);
                         }
                     }, 0);
                     return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {

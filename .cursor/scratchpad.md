@@ -360,6 +360,7 @@ Both thread-based flows now work seamlessly:
 - [x] **Enhanced Office Detection**: Support for multiple office name formats
 - [x] **Enhanced Error Handling**: Specific error messages for different Crossmint failure scenarios
 - [x] **ASIN Direct Lookup**: Enable direct product lookups via ASIN identifiers
+- [x] **Order History Lookup**: Full implementation with conflict resolution
 
 ### In Progress 🔄
 - [ ] **Order History Lookup**: `/orders` slash command to show user's purchase history
