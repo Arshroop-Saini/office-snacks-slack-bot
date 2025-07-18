@@ -413,20 +413,48 @@ export async function POST(request: Request) {
                         try {
                             const { query, page } = parsedValue;
                             const perPage = 5;
-                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                            const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
-                            const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
-                            const responseBody = {
-                                response_type: "in_channel",
-                                replace_original: true,
-                                blocks,
-                            };
-                            console.log(`[COMMAND] (async) Responding to ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
-                            await fetch(responseUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
+
+                            // Check if this is orders pagination or Amazon search pagination
+                            if (query.startsWith("orders:")) {
+                                // Handle orders pagination
+                                const userEmail = query.replace("orders:", "");
+                                console.log(`[COMMAND] (async) Loading orders page ${page} for email: ${userEmail}`);
+
+                                const { orders, pagination: orderPagination } = await crossmintOrdersTool.execute({
+                                    email: userEmail,
+                                    page,
+                                    perPage
+                                });
+
+                                const blocks = formatOrderBlocksStateless(orders, orderPagination.page, orderPagination.totalPages, userEmail);
+                                const responseBody = {
+                                    response_type: "in_channel",
+                                    replace_original: true,
+                                    blocks,
+                                };
+                                console.log(`[COMMAND] (async) Responding to orders ${action.action_id} with page ${page}`);
+                                await fetch(responseUrl, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(responseBody),
+                                });
+                            } else {
+                                // Handle Amazon search pagination
+                                const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
+                                const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
+                                const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
+                                const responseBody = {
+                                    response_type: "in_channel",
+                                    replace_original: true,
+                                    blocks,
+                                };
+                                console.log(`[COMMAND] (async) Responding to Amazon ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
+                                await fetch(responseUrl, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(responseBody),
+                                });
+                            }
                         } catch (err) {
                             console.error(`[COMMAND] (async) Error in ${action.action_id}:`, err);
                         }

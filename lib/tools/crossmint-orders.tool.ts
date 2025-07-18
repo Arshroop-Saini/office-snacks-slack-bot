@@ -89,7 +89,13 @@ export const crossmintOrdersTool = {
             }
 
             const data = JSON.parse(responseBody);
+            console.log(`[CROSSMINT ORDERS] Raw API response:`, JSON.stringify(data, null, 2));
             console.log(`[CROSSMINT ORDERS] Successfully fetched ${data.orders?.length || 0} orders`);
+
+            // Log first order structure for debugging
+            if (data.orders && data.orders.length > 0) {
+                console.log(`[CROSSMINT ORDERS] First order structure:`, JSON.stringify(data.orders[0], null, 2));
+            }
 
             // Ensure we have the expected response structure
             return {
