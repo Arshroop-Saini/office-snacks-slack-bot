@@ -223,39 +223,6 @@ export async function POST(request: Request) {
                         headers: { "Content-Type": "application/json" },
                     });
                 }
-                // Show instant loading indicator with disabled buttons
-                const { query, page } = parsedValue;
-                const perPage = 5;
-                const loadingBlocks = formatProductBlocksStateless([], page, page, query, true);
-                await fetch(payload.response_url, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ response_type: "ephemeral", text: "Loading page...", blocks: loadingBlocks }),
-                });
-                // Fetch new page from SearchApi.io
-                try {
-                    const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
-                    const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : page;
-                    const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
-                    const responseBody = {
-                        response_type: "in_channel",
-                        replace_original: true,
-                        blocks,
-                    };
-                    await fetch(payload.response_url, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(responseBody),
-                    });
-                } catch (err) {
-                    console.error(`[COMMAND] Error fetching page:`, err);
-                    await fetch(payload.response_url, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ response_type: "ephemeral", text: `:warning: Failed to load page. Please try again.` }),
-                    });
-                }
-                return new Response("", { status: 200 });
             }
             return new Response("", { status: 200 });
         }
