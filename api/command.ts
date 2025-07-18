@@ -382,6 +382,26 @@ export async function POST(request: Request) {
                     perPage: 5
                 });
 
+                console.log(`[COMMAND] Orders API response:`, {
+                    ordersCount: orders.length,
+                    pagination: pagination,
+                    firstOrder: orders[0] ? {
+                        orderId: orders[0].orderId,
+                        status: `${orders[0].paymentStatus}/${orders[0].deliveryStatus}`,
+                        total: orders[0].totalPrice,
+                        createdAt: orders[0].createdAt,
+                        quantity: orders[0].quantity,
+                        origin: orders[0].origin
+                    } : null,
+                    allOrders: orders.map(order => ({
+                        orderId: order.orderId,
+                        paymentStatus: order.paymentStatus,
+                        deliveryStatus: order.deliveryStatus,
+                        totalPrice: order.totalPrice,
+                        createdAt: order.createdAt
+                    }))
+                });
+
                 if (!orders.length) {
                     console.log("[COMMAND] No orders found for user");
                     return new Response(
@@ -393,8 +413,9 @@ export async function POST(request: Request) {
                     );
                 }
 
-                // Format orders for display (we'll implement this in Phase 3)
+                // Format orders for display
                 const blocks = formatOrderBlocksStateless(orders, pagination.page, pagination.totalPages, userEmail);
+                console.log(`[COMMAND] Generated ${blocks.length} blocks for orders display`);
 
                 return new Response(
                     JSON.stringify({
@@ -419,117 +440,129 @@ export async function POST(request: Request) {
             console.log("[COMMAND] Unknown command", params.command);
             return new Response("Unknown command", { status: 400 });
         }
-
-        // 2. Handle Slack interactivity payloads as application/json (rare, but possible)
-        if (contentType.includes("application/json")) {
-            const payload = await request.json();
-            console.log("[COMMAND] Interactivity payload", JSON.stringify(payload, null, 2));
-            if (payload.type === "block_actions") {
-                const action = payload.actions[0];
-                let parsedValue;
-                try {
-                    parsedValue = JSON.parse(action.value);
-                    console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
-                } catch (err) {
-                    console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
-                    return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                }
-                const responseUrl = payload.response_url;
-                // Handle Amazon search pagination (original logic preserved)
-                if (action.action_id === "next_page" || action.action_id === "back_page") {
-                    setTimeout(async () => {
-                        try {
-                            const { query, page } = parsedValue;
-                            const perPage = 5;
-                            const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                            const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
-                            const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
-                            const responseBody = {
-                                response_type: "in_channel",
-                                replace_original: true,
-                                blocks,
-                            };
-                            console.log(`[COMMAND] (async) Responding to Amazon ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
-                            await fetch(responseUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
-                        } catch (err) {
-                            console.error(`[COMMAND] (async) Error in Amazon ${action.action_id}:`, err);
-                        }
-                    }, 0);
-                    return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                }
-                // Handle orders pagination (completely separate logic)
-                else if (action.action_id === "orders_next_page" || action.action_id === "orders_back_page") {
-                    setTimeout(async () => {
-                        try {
-                            const { userEmail, page } = parsedValue;
-                            const perPage = 5;
-                            console.log(`[COMMAND] (async) Loading orders page ${page} for email: ${userEmail}`);
-
-                            const { orders, pagination: orderPagination } = await crossmintOrdersTool.execute({
-                                email: userEmail,
-                                page,
-                                perPage
-                            });
-
-                            const blocks = formatOrderBlocksStateless(orders, orderPagination.page, orderPagination.totalPages, userEmail);
-                            const responseBody = {
-                                response_type: "in_channel",
-                                replace_original: true,
-                                blocks,
-                            };
-                            console.log(`[COMMAND] (async) Responding to orders ${action.action_id} with page ${page}`);
-                            await fetch(responseUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
-                        } catch (err) {
-                            console.error(`[COMMAND] (async) Error in orders ${action.action_id}:`, err);
-                        }
-                    }, 0);
-                    return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                } else if (action.action_id.startsWith("select_product_")) {
-                    setTimeout(async () => {
-                        try {
-                            const { productIndex } = parsedValue;
-                            const responseBody = {
-                                response_type: "in_channel",
-                                replace_original: false,
-                                text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
-                            };
-                            console.log("[COMMAND] (async) Responding to select_product with:", JSON.stringify(responseBody, null, 2));
-                            await fetch(responseUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
-                        } catch (err) {
-                            console.error("[COMMAND] (async) Error in select_product:", err);
-                        }
-                    }, 0);
-                    return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                }
-            }
-            return new Response("", { status: 200 });
-        }
-
-        // Fallback: unsupported content type
-        return new Response("Unsupported content type", { status: 400 });
     }
+
+    // 2. Handle Slack interactivity payloads as application/json (rare, but possible)
+    if (contentType.includes("application/json")) {
+        const payload = await request.json();
+        console.log("[COMMAND] Interactivity payload", JSON.stringify(payload, null, 2));
+        if (payload.type === "block_actions") {
+            const action = payload.actions[0];
+            let parsedValue;
+            try {
+                parsedValue = JSON.parse(action.value);
+                console.log(`[COMMAND] Parsed action.value for ${action.action_id}:`, parsedValue);
+            } catch (err) {
+                console.error(`[COMMAND] Failed to parse action.value for ${action.action_id}:`, action.value, err);
+                return new Response(JSON.stringify({ response_type: "ephemeral", text: `Error: Invalid button value format.` }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+            const responseUrl = payload.response_url;
+            // Handle Amazon search pagination (original logic preserved)
+            if (action.action_id === "next_page" || action.action_id === "back_page") {
+                setTimeout(async () => {
+                    try {
+                        const { query, page } = parsedValue;
+                        const perPage = 5;
+                        const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
+                        const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
+                        const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: true,
+                            blocks,
+                        };
+                        console.log(`[COMMAND] (async) Responding to Amazon ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
+                        await fetch(responseUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error(`[COMMAND] (async) Error in Amazon ${action.action_id}:`, err);
+                    }
+                }, 0);
+                return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+            // Handle orders pagination (completely separate logic)
+            else if (action.action_id === "orders_next_page" || action.action_id === "orders_back_page") {
+                setTimeout(async () => {
+                    try {
+                        const { userEmail, page } = parsedValue;
+                        const perPage = 5;
+                        console.log(`[COMMAND] (async) Loading orders page ${page} for email: ${userEmail}`);
+
+                        const { orders, pagination: orderPagination } = await crossmintOrdersTool.execute({
+                            email: userEmail,
+                            page,
+                            perPage
+                        });
+
+                        console.log(`[COMMAND] (async) Orders pagination response:`, {
+                            action: action.action_id,
+                            page: page,
+                            ordersCount: orders.length,
+                            pagination: orderPagination,
+                            firstOrder: orders[0] ? {
+                                orderId: orders[0].orderId,
+                                status: `${orders[0].paymentStatus}/${orders[0].deliveryStatus}`,
+                                total: orders[0].totalPrice
+                            } : null
+                        });
+
+                        const blocks = formatOrderBlocksStateless(orders, orderPagination.page, orderPagination.totalPages, userEmail);
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: true,
+                            blocks,
+                        };
+                        console.log(`[COMMAND] (async) Responding to orders ${action.action_id} with page ${page}`);
+                        await fetch(responseUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error(`[COMMAND] (async) Error in orders ${action.action_id}:`, err);
+                    }
+                }, 0);
+                return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            } else if (action.action_id.startsWith("select_product_")) {
+                setTimeout(async () => {
+                    try {
+                        const { productIndex } = parsedValue;
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: false,
+                            text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                        };
+                        console.log("[COMMAND] (async) Responding to select_product with:", JSON.stringify(responseBody, null, 2));
+                        await fetch(responseUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error("[COMMAND] (async) Error in select_product:", err);
+                    }
+                }, 0);
+                return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+        }
+        return new Response("", { status: 200 });
+    }
+
+    // Fallback: unsupported content type
+    return new Response("Unsupported content type", { status: 400 });
 } 

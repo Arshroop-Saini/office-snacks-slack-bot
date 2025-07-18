@@ -94,10 +94,11 @@ export const crossmintOrdersTool = {
             }
 
             const data = JSON.parse(responseBody);
+            console.log(`[CROSSMINT ORDERS] Raw API response:`, JSON.stringify(data, null, 2));
             console.log(`[CROSSMINT ORDERS] Successfully fetched ${data.orders?.length || 0} orders`);
 
             // Ensure we have the expected response structure
-            return {
+            const result = {
                 orders: data.orders || [],
                 pagination: {
                     page: data.pagination?.page || page,
@@ -106,6 +107,19 @@ export const crossmintOrdersTool = {
                     totalOrders: data.pagination?.total || (data.orders?.length || 0)
                 }
             };
+
+            console.log(`[CROSSMINT ORDERS] Processed result:`, {
+                ordersCount: result.orders.length,
+                pagination: result.pagination,
+                firstOrder: result.orders[0] ? {
+                    orderId: result.orders[0].orderId,
+                    paymentStatus: result.orders[0].paymentStatus,
+                    deliveryStatus: result.orders[0].deliveryStatus,
+                    totalPrice: result.orders[0].totalPrice
+                } : null
+            });
+
+            return result;
 
         } catch (error) {
             console.error("[CROSSMINT ORDERS] Error fetching orders:", error);

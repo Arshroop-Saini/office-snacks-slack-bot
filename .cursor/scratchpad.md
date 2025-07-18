@@ -60,7 +60,7 @@ Users want to easily see products they've previously bought through the bot. A n
    - [x] Return product options with preview image, cost, ratings, ETA
    - [x] Allow user to pick a product to purchase
    - [x] **ASIN Direct Lookup** ✅ - Enable direct ASIN queries for specific product fetching
-   - [ ] **Order History Lookup** 🔄 - Enable users to view their purchase history via `/orders` command
+   - [x] **Order History Lookup** ✅ - Enable users to view their purchase history via `/orders` command
 3. **Channel support**
    - [ ] Make bot work in channels, not just DMs
 4. **Switch model to Sonnet 3.7**
@@ -360,7 +360,8 @@ Both thread-based flows now work seamlessly:
 - [x] **Enhanced Office Detection**: Support for multiple office name formats
 - [x] **Enhanced Error Handling**: Specific error messages for different Crossmint failure scenarios
 - [x] **ASIN Direct Lookup**: Enable direct product lookups via ASIN identifiers
-- [x] **Order History Lookup**: Full implementation with conflict resolution
+- [x] **ASIN-based Buying**: Direct purchasing with ASINs (`@snack_bot buy this B0DWQC12R5`)
+- [x] **Order History Lookup**: Complete `/orders` command with pagination and proper formatting
 
 ### In Progress 🔄
 - [ ] **Order History Lookup**: `/orders` slash command to show user's purchase history
