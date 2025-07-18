@@ -223,6 +223,75 @@ export async function POST(request: Request) {
                         headers: { "Content-Type": "application/json" },
                     });
                 }
+                // Handle Amazon search pagination
+                if (action.action_id === "next_page" || action.action_id === "back_page") {
+                    const { query, page } = parsedValue;
+                    const perPage = 5;
+                    const loadingBlocks = formatProductBlocksStateless([], page, page, query, true);
+                    await fetch(payload.response_url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ response_type: "ephemeral", text: "Loading page...", blocks: loadingBlocks }),
+                    });
+                    // Fetch new page from SearchApi.io
+                    try {
+                        const { products, pagination } = await amazonSearchTool.execute({ query, page, perPage });
+                        const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : page;
+                        const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: true,
+                            blocks,
+                        };
+                        await fetch(payload.response_url, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error(`[COMMAND] Error fetching page:`, err);
+                        await fetch(payload.response_url, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ response_type: "ephemeral", text: `:warning: Failed to load page. Please try again.` }),
+                        });
+                    }
+                    return new Response("", { status: 200 });
+                }
+                // Handle orders pagination
+                else if (action.action_id === "orders_next_page" || action.action_id === "orders_back_page") {
+                    const { userEmail, page } = parsedValue;
+                    const perPage = 5;
+                    console.log(`[COMMAND] Loading orders page ${page} for email: ${userEmail}`);
+
+                    try {
+                        const { orders, pagination: orderPagination } = await crossmintOrdersTool.execute({
+                            email: userEmail,
+                            page,
+                            perPage
+                        });
+
+                        const blocks = formatOrderBlocksStateless(orders, orderPagination.page, orderPagination.totalPages, userEmail);
+                        const responseBody = {
+                            response_type: "in_channel",
+                            replace_original: true,
+                            blocks,
+                        };
+                        await fetch(payload.response_url, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(responseBody),
+                        });
+                    } catch (err) {
+                        console.error(`[COMMAND] Error in orders pagination:`, err);
+                        await fetch(payload.response_url, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ response_type: "ephemeral", text: `:warning: Failed to load orders page. Please try again.` }),
+                        });
+                    }
+                    return new Response("", { status: 200 });
+                }
             }
             return new Response("", { status: 200 });
         }
@@ -427,82 +496,8 @@ export async function POST(request: Request) {
                 });
             }
             const responseUrl = payload.response_url;
-            // Handle Amazon search pagination (original logic preserved)
-            if (action.action_id === "next_page" || action.action_id === "back_page") {
-                setTimeout(async () => {
-                    try {
-                        const { query, page } = parsedValue;
-                        const perPage = 5;
-                        const { products, pagination: apiPagination } = await amazonSearchTool.execute({ query, page, perPage });
-                        const totalPages = apiPagination && apiPagination.other_pages ? Object.keys(apiPagination.other_pages).length + 1 : page;
-                        const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
-                        const responseBody = {
-                            response_type: "in_channel",
-                            replace_original: true,
-                            blocks,
-                        };
-                        console.log(`[COMMAND] (async) Responding to Amazon ${action.action_id} with:`, JSON.stringify(responseBody, null, 2));
-                        await fetch(responseUrl, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(responseBody),
-                        });
-                    } catch (err) {
-                        console.error(`[COMMAND] (async) Error in Amazon ${action.action_id}:`, err);
-                    }
-                }, 0);
-                return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                });
-            }
-            // Handle orders pagination (completely separate logic)
-            else if (action.action_id === "orders_next_page" || action.action_id === "orders_back_page") {
-                setTimeout(async () => {
-                    try {
-                        const { userEmail, page } = parsedValue;
-                        const perPage = 5;
-                        console.log(`[COMMAND] (async) Loading orders page ${page} for email: ${userEmail}`);
 
-                        const { orders, pagination: orderPagination } = await crossmintOrdersTool.execute({
-                            email: userEmail,
-                            page,
-                            perPage
-                        });
-
-                        console.log(`[COMMAND] (async) Orders pagination response:`, {
-                            action: action.action_id,
-                            page: page,
-                            ordersCount: orders.length,
-                            pagination: orderPagination,
-                            firstOrder: orders[0] ? {
-                                orderId: orders[0].orderId,
-                                status: `${orders[0].paymentStatus}/${orders[0].deliveryStatus}`,
-                                total: orders[0].totalPrice
-                            } : null
-                        });
-
-                        const blocks = formatOrderBlocksStateless(orders, orderPagination.page, orderPagination.totalPages, userEmail);
-                        const responseBody = {
-                            response_type: "in_channel",
-                            replace_original: true,
-                            blocks,
-                        };
-                        console.log(`[COMMAND] (async) Responding to orders ${action.action_id} with page ${page}`);
-                        await fetch(responseUrl, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(responseBody),
-                        });
-                    } catch (err) {
-                        console.error(`[COMMAND] (async) Error in orders ${action.action_id}:`, err);
-                    }
-                }, 0);
-                return new Response(JSON.stringify({ text: `Loading page...`, response_type: "ephemeral" }), {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                });
-            } else if (action.action_id.startsWith("select_product_")) {
+            if (action.action_id.startsWith("select_product_")) {
                 setTimeout(async () => {
                     try {
                         const { productIndex } = parsedValue;
