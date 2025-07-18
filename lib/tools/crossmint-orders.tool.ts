@@ -53,7 +53,7 @@ export const crossmintOrdersTool = {
             const response = await fetch(url, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${apiKey}`,
+                    'X-API-KEY': apiKey,
                     'Content-Type': 'application/json',
                 },
             });
