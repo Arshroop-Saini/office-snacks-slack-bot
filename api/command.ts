@@ -2,7 +2,7 @@ import { amazonSearchTool } from "../lib/tools/amazon-search.tool";
 import { crossmintOrdersTool } from "../lib/tools/crossmint-orders.tool";
 import type { CrossmintOrder } from "../lib/tools/crossmint-orders.tool";
 import { generateResponse } from "../lib/generate-response";
-import { client, getUserEmail } from "../lib/slack-utils";
+import { client, getUserEmail, getBotId } from "../lib/slack-utils";
 import type { CoreMessage } from "ai";
 
 type Product = {
@@ -527,20 +527,39 @@ export async function POST(request: Request) {
                     try {
                         const { asin, productIndex, productTitle } = parsedValue;
 
-                        // Post a threaded message with the auto-generated buy command
-                        const buyCommand = `@Office Snacks buy me this ${asin}`;
-                        const responseText = `🛒 **Product Selected**: ${productTitle}\n\n` +
-                            `To proceed with purchase, copy and send this command:\n\n` +
-                            `\`${buyCommand}\`\n\n` +
-                            `💡 *Just copy the command above and press Enter to start the purchase flow!*`;
+                        // Get channel and message timestamp for threading
+                        const channelId = payload.container.channel_id;
+                        const messageTs = payload.container.message_ts;
 
+                        console.log("[COMMAND] Creating threaded buy command for:", { asin, productTitle, channelId, messageTs });
+
+                        // Get bot user ID and create buy command
+                        const botUserId = await getBotId();
+                        const buyCommand = `<@${botUserId}> buy me this ${asin}`;
+
+                        await client.chat.postMessage({
+                            channel: channelId,
+                            thread_ts: messageTs,
+                            text: buyCommand,
+                            blocks: [
+                                {
+                                    type: "section",
+                                    text: {
+                                        type: "mrkdwn",
+                                        text: `🛒 **Ready to purchase**: ${productTitle}\n\n${buyCommand}\n\n💡 *The bot will process this command automatically in a few seconds...*`
+                                    }
+                                }
+                            ]
+                        });
+
+                        console.log("[COMMAND] Posted threaded buy command successfully");
+
+                        // Send ephemeral response to the button clicker
                         const responseBody = {
-                            response_type: "in_channel",
-                            replace_original: false,
-                            text: responseText
+                            response_type: "ephemeral",
+                            text: "✅ Buy command posted in thread! The bot will process it automatically."
                         };
 
-                        console.log("[COMMAND] (async) Responding to select_product with:", JSON.stringify(responseBody, null, 2));
                         await fetch(responseUrl, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -548,9 +567,18 @@ export async function POST(request: Request) {
                         });
                     } catch (err) {
                         console.error("[COMMAND] (async) Error in select_product:", err);
+                        // Send error response
+                        await fetch(responseUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                response_type: "ephemeral",
+                                text: "❌ Error creating buy command. Please try again."
+                            }),
+                        });
                     }
                 }, 0);
-                return new Response(JSON.stringify({ text: "Product selected! Check the thread for purchase command...", response_type: "ephemeral" }), {
+                return new Response(JSON.stringify({ text: "Creating buy command...", response_type: "ephemeral" }), {
                     status: 200,
                     headers: { "Content-Type": "application/json" },
                 });

@@ -369,9 +369,10 @@ Both thread-based flows now work seamlessly:
 - [x] **ASIN Direct Lookup**: Enable direct product lookups via ASIN identifiers
 - [x] **ASIN-based Buying**: Direct purchasing with ASINs (`@snack_bot buy this B0DWQC12R5`)
 - [x] **Order History Lookup**: Complete `/orders` command with pagination and proper formatting
+- [x] **"Select This" Product Buttons**: Streamlined purchase flow with auto-generated buy commands
 
 ### In Progress 🔄
-- [ ] **Order History Lookup**: `/orders` slash command to show user's purchase history
+- [ ] **Nothing currently in progress**
 
 ### Pending 📋  
 - [ ] Switch model to Sonnet 3.7
@@ -574,3 +575,11 @@ if (params.command === "/orders") {
 - Extend existing Crossmint error parsing in `generate-response.ts`
 - Add order-specific error patterns and user messages
 - Maintain consistent error experience across all features 
+
+**"Select This" Product Buttons Analysis:**
+- **UX Enhancement**: Clear call-to-action buttons on each product card to indicate purchase intent
+- **Automated Threading**: Automatically creates threaded replies to search results when button is clicked
+- **Bot Self-Tagging**: Bot posts the buy command and tags itself: `@Office Snacks buy me this [ASIN]`
+- **Seamless Flow**: User clicks button → Thread created → Buy command posted → Bot processes automatically
+- **ASIN-based Integration**: Leverages existing ASIN buying capabilities for immediate purchase processing
+- **Visual Design**: Primary-styled buttons with shopping cart emoji for clear user guidance 
