@@ -331,15 +331,25 @@ export async function POST(request: Request) {
 
                             // Get bot user ID and create buy command
                             const botUserId = await getBotId();
+                            console.log("[COMMAND] Bot user ID:", botUserId);
                             const buyCommand = `<@${botUserId}> buy me this ${asin}`;
+                            console.log("[COMMAND] Buy command text:", buyCommand);
 
-                            await client.chat.postMessage({
+                            console.log("[COMMAND] Attempting to post message with params:", {
+                                channel: channelId,
+                                thread_ts: messageTs,
+                                text: buyCommand,
+                                unfurl_links: false
+                            });
+
+                            const result = await client.chat.postMessage({
                                 channel: channelId,
                                 thread_ts: messageTs, // Reply to the search results message
                                 text: buyCommand,
                                 unfurl_links: false
                             });
 
+                            console.log("[COMMAND] Slack API response:", result);
                             console.log("[COMMAND] Posted threaded buy command successfully");
 
                             // Send ephemeral response to the button clicker
