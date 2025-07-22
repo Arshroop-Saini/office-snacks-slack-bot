@@ -329,7 +329,40 @@ export async function POST(request: Request) {
 
                             console.log("[COMMAND] Creating threaded buy command for:", { asin, productTitle, channelId, messageTs });
 
-                            // Check if there's already a selection message in this thread
+                            // Post buy command message and directly trigger purchase flow
+                            const botUserId = await getBotId();
+                            const buyCommandText = `<@${botUserId}> buy me this ${asin}`;
+
+                            const buyMessage = await client.chat.postMessage({
+                                channel: channelId,
+                                thread_ts: messageTs,
+                                text: buyCommandText,
+                                unfurl_links: false
+                            });
+
+                            console.log("[COMMAND] Posted buy command message:", buyCommandText);
+
+                            // Simulate app mention event to trigger purchase flow
+                            if (buyMessage.ts) {
+                                const { handleNewAppMention } = await import('../lib/handle-app-mention');
+                                const simulatedEvent = {
+                                    type: 'app_mention' as const,
+                                    user: payload.user.id,
+                                    text: buyCommandText,
+                                    ts: buyMessage.ts,
+                                    thread_ts: messageTs,
+                                    channel: channelId,
+                                    event_ts: String(Date.now() / 1000)
+                                };
+
+                                console.log("[COMMAND] Triggering purchase flow for ASIN:", asin);
+                                // Don't await - let it run async to avoid blocking the response
+                                handleNewAppMention(simulatedEvent, botUserId).catch(err => {
+                                    console.error("[COMMAND] Error in simulated app mention:", err);
+                                });
+                            }
+
+                            // Also update/create selection tracking message
                             try {
                                 const threadReplies = await client.conversations.replies({
                                     channel: channelId,
@@ -372,13 +405,7 @@ export async function POST(request: Request) {
                                 }
                             } catch (error) {
                                 console.error("[COMMAND] Error managing selection message:", error);
-                                // Fallback to simple post
-                                await client.chat.postMessage({
-                                    channel: channelId,
-                                    thread_ts: messageTs,
-                                    text: `Hi! You selected: ${productTitle} (ASIN: ${asin})`,
-                                    unfurl_links: false
-                                });
+                                // Selection tracking is non-critical, continue with purchase flow
                             }
 
                             // Send ephemeral response to the button clicker (non-replacing)
@@ -632,7 +659,40 @@ export async function POST(request: Request) {
 
                         console.log("[COMMAND] (JSON) Creating threaded selection for:", { asin, productTitle, channelId, messageTs });
 
-                        // Check if there's already a selection message in this thread
+                        // Post buy command message and directly trigger purchase flow
+                        const botUserId = await getBotId();
+                        const buyCommandText = `<@${botUserId}> buy me this ${asin}`;
+
+                        const buyMessage = await client.chat.postMessage({
+                            channel: channelId,
+                            thread_ts: messageTs,
+                            text: buyCommandText,
+                            unfurl_links: false
+                        });
+
+                        console.log("[COMMAND] (JSON) Posted buy command message:", buyCommandText);
+
+                        // Simulate app mention event to trigger purchase flow
+                        if (buyMessage.ts) {
+                            const { handleNewAppMention } = await import('../lib/handle-app-mention');
+                            const simulatedEvent = {
+                                type: 'app_mention' as const,
+                                user: payload.user.id,
+                                text: buyCommandText,
+                                ts: buyMessage.ts,
+                                thread_ts: messageTs,
+                                channel: channelId,
+                                event_ts: String(Date.now() / 1000)
+                            };
+
+                            console.log("[COMMAND] (JSON) Triggering purchase flow for ASIN:", asin);
+                            // Don't await - let it run async to avoid blocking the response
+                            handleNewAppMention(simulatedEvent, botUserId).catch(err => {
+                                console.error("[COMMAND] (JSON) Error in simulated app mention:", err);
+                            });
+                        }
+
+                        // Also update/create selection tracking message
                         try {
                             const threadReplies = await client.conversations.replies({
                                 channel: channelId,
@@ -675,13 +735,7 @@ export async function POST(request: Request) {
                             }
                         } catch (error) {
                             console.error("[COMMAND] (JSON) Error managing selection message:", error);
-                            // Fallback to simple post
-                            await client.chat.postMessage({
-                                channel: channelId,
-                                thread_ts: messageTs,
-                                text: `Hi! You selected: ${productTitle} (ASIN: ${asin})`,
-                                unfurl_links: false
-                            });
+                            // Selection tracking is non-critical, continue with purchase flow
                         }
 
                         // Send ephemeral response to the button clicker (non-replacing)
