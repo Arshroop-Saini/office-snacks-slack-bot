@@ -41,6 +41,7 @@ export const amazonSearchTool = {
             ratings_total: product.reviews || null,
             eta: product.fulfillment?.standard_delivery?.text || null,
             description: product.brand || "",
+            asin: product.asin || null, // <-- add this line
         }));
 
         return {

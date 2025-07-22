@@ -15,6 +15,7 @@ type Product = {
     ratings_total?: number;
     eta?: string;
     description?: string;
+    asin?: string; // <-- add this line
 };
 
 // ASIN Detection and Validation Functions
@@ -180,7 +181,7 @@ function formatProductBlocksStateless(products: Product[], page: number, totalPa
                 type: "section",
                 text: {
                     type: "mrkdwn",
-                    text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}`,
+                    text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}\n*ASIN:* ${product.asin ?? "N/A"}`,
                 },
                 accessory: product.image ? {
                     type: "image",
