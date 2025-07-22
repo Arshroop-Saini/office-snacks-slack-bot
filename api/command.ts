@@ -317,6 +317,60 @@ export async function POST(request: Request) {
                     }
                     return new Response("", { status: 200 });
                 }
+                // Handle product selection buttons
+                else if (action.action_id.startsWith("select_product_")) {
+                    setTimeout(async () => {
+                        try {
+                            const { asin, productIndex, productTitle } = parsedValue;
+
+                            // Get channel and message timestamp for threading
+                            const channelId = payload.container.channel_id;
+                            const messageTs = payload.container.message_ts;
+
+                            console.log("[COMMAND] Creating threaded buy command for:", { asin, productTitle, channelId, messageTs });
+
+                            // Get bot user ID and create buy command
+                            const botUserId = await getBotId();
+                            const buyCommand = `<@${botUserId}> buy me this ${asin}`;
+
+                            await client.chat.postMessage({
+                                channel: channelId,
+                                thread_ts: messageTs, // Reply to the search results message
+                                text: buyCommand,
+                                unfurl_links: false
+                            });
+
+                            console.log("[COMMAND] Posted threaded buy command successfully");
+
+                            // Send ephemeral response to the button clicker
+                            const responseBody = {
+                                response_type: "ephemeral",
+                                text: "✅ Buy command posted in thread! The bot will process it automatically."
+                            };
+
+                            await fetch(payload.response_url, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(responseBody),
+                            });
+                        } catch (err) {
+                            console.error("[COMMAND] (async) Error in select_product:", err);
+                            // Send error response
+                            await fetch(payload.response_url, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    response_type: "ephemeral",
+                                    text: "❌ Error creating buy command. Please try again."
+                                }),
+                            });
+                        }
+                    }, 0);
+                    return new Response(JSON.stringify({ text: "Creating buy command...", response_type: "ephemeral" }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
             }
             return new Response("", { status: 200 });
         }
