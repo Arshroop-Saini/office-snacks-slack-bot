@@ -11,6 +11,13 @@ When users provide an Amazon ASIN (e.g., `/amazon B0DWQC12R5`), the bot should d
 **NEW FEATURE REQUEST: Order History Lookup**
 Users want to easily see products they've previously bought through the bot. A new `/orders` slash command should fetch and display their purchase history using Crossmint's orders API, showing order details, status, and purchase dates in a user-friendly Slack format.
 
+**NEW FEATURE REQUEST: "Select This" Product Buttons**
+After search results are displayed, it's unclear what the next step should be. Users need a clear UI element to indicate purchase intent. Each product result card should have a "Select This" button that:
+1. Opens a thread reply to the search results
+2. Auto-generates the purchase command: "@Office Snacks buy me this [ASIN]"
+3. Waits for user to press enter to trigger the command
+4. Streamlines the purchase flow from search → selection → purchase
+
 # Key Challenges and Analysis
 
 - **Product discovery does not start in Slack**: Users default to Amazon, not the bot.

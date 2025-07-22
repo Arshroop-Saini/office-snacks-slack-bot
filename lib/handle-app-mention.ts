@@ -14,6 +14,7 @@ type Product = {
   ratings_total?: number;
   eta?: string;
   description?: string;
+  asin?: string;
 };
 
 // ASIN Detection and Validation Functions (copied from command.ts)
@@ -78,12 +79,13 @@ function formatProductBlocksStateless(products: Product[], page: number, totalPa
       text: { type: "mrkdwn", text: ":warning: No products found for this page." },
     });
   } else {
-    for (const product of products) {
+    for (let i = 0; i < products.length; i++) {
+      const product = products[i];
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}`,
+          text: `*<${product.url}|${product.title}>*\n\n*Price:* ${product.price ?? "N/A"}   *Rating:* ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n*ETA:* ${product.eta ?? "N/A"}\n*ASIN:* ${product.asin ?? "N/A"}`,
         },
         accessory: product.image ? {
           type: "image",
@@ -91,6 +93,29 @@ function formatProductBlocksStateless(products: Product[], page: number, totalPa
           alt_text: product.title,
         } : undefined,
       });
+
+      // Add "Select This" button for each product
+      if (product.asin) {
+        blocks.push({
+          type: "actions",
+          elements: [{
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "🛒 Select This",
+              emoji: true
+            },
+            value: JSON.stringify({
+              asin: product.asin,
+              productIndex: i,
+              productTitle: product.title
+            }),
+            action_id: `select_product_${i}`,
+            style: "primary"
+          }]
+        });
+      }
+
       blocks.push({ type: "divider" });
     }
   }

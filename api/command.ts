@@ -176,7 +176,8 @@ function formatProductBlocksStateless(products: Product[], page: number, totalPa
             text: { type: "mrkdwn", text: ":warning: No products found for this page." },
         });
     } else {
-        for (const product of products) {
+        for (let i = 0; i < products.length; i++) {
+            const product = products[i];
             blocks.push({
                 type: "section",
                 text: {
@@ -189,6 +190,29 @@ function formatProductBlocksStateless(products: Product[], page: number, totalPa
                     alt_text: product.title,
                 } : undefined,
             });
+
+            // Add "Select This" button for each product
+            if (product.asin) {
+                blocks.push({
+                    type: "actions",
+                    elements: [{
+                        type: "button",
+                        text: {
+                            type: "plain_text",
+                            text: "🛒 Select This",
+                            emoji: true
+                        },
+                        value: JSON.stringify({
+                            asin: product.asin,
+                            productIndex: i,
+                            productTitle: product.title
+                        }),
+                        action_id: `select_product_${i}`,
+                        style: "primary"
+                    }]
+                });
+            }
+
             blocks.push({ type: "divider" });
         }
     }
@@ -501,12 +525,21 @@ export async function POST(request: Request) {
             if (action.action_id.startsWith("select_product_")) {
                 setTimeout(async () => {
                     try {
-                        const { productIndex } = parsedValue;
+                        const { asin, productIndex, productTitle } = parsedValue;
+
+                        // Post a threaded message with the auto-generated buy command
+                        const buyCommand = `@Office Snacks buy me this ${asin}`;
+                        const responseText = `🛒 **Product Selected**: ${productTitle}\n\n` +
+                            `To proceed with purchase, copy and send this command:\n\n` +
+                            `\`${buyCommand}\`\n\n` +
+                            `💡 *Just copy the command above and press Enter to start the purchase flow!*`;
+
                         const responseBody = {
                             response_type: "in_channel",
                             replace_original: false,
-                            text: `You selected product #${productIndex + 1}. (Order flow to be implemented)`
+                            text: responseText
                         };
+
                         console.log("[COMMAND] (async) Responding to select_product with:", JSON.stringify(responseBody, null, 2));
                         await fetch(responseUrl, {
                             method: "POST",
@@ -517,7 +550,7 @@ export async function POST(request: Request) {
                         console.error("[COMMAND] (async) Error in select_product:", err);
                     }
                 }, 0);
-                return new Response(JSON.stringify({ text: "Processing selection...", response_type: "ephemeral" }), {
+                return new Response(JSON.stringify({ text: "Product selected! Check the thread for purchase command...", response_type: "ephemeral" }), {
                     status: 200,
                     headers: { "Content-Type": "application/json" },
                 });
