@@ -329,15 +329,50 @@ export async function POST(request: Request) {
 
                             console.log("[COMMAND] Creating threaded buy command for:", { asin, productTitle, channelId, messageTs });
 
-                            // Post a simple "hi" message as a threaded reply
-                            await client.chat.postMessage({
-                                channel: channelId,
-                                thread_ts: messageTs, // Reply to the search results message
-                                text: `Hi! You selected: ${productTitle} (ASIN: ${asin})`,
-                                unfurl_links: false
-                            });
+                            // Check if there's already a selection message in this thread
+                            try {
+                                const threadReplies = await client.conversations.replies({
+                                    channel: channelId,
+                                    ts: messageTs,
+                                    limit: 10
+                                });
 
-                            console.log("[COMMAND] Posted threaded reply successfully");
+                                // Look for existing selection message posted by the bot
+                                const existingSelectionMessage = threadReplies.messages?.find(msg =>
+                                    msg.bot_id && msg.text?.includes("🛒 Selected Products:")
+                                );
+
+                                if (existingSelectionMessage) {
+                                    // Update existing message with new selection
+                                    const currentSelections = existingSelectionMessage.text || "";
+                                    const newText = currentSelections + `\n• ${productTitle} (ASIN: ${asin})`;
+
+                                    await client.chat.update({
+                                        channel: channelId,
+                                        ts: existingSelectionMessage.ts!,
+                                        text: newText
+                                    });
+                                    console.log("[COMMAND] Updated existing selection message");
+                                } else {
+                                    // Create new selection message
+                                    await client.chat.postMessage({
+                                        channel: channelId,
+                                        thread_ts: messageTs,
+                                        text: `🛒 Selected Products:\n• ${productTitle} (ASIN: ${asin})`,
+                                        unfurl_links: false
+                                    });
+                                    console.log("[COMMAND] Posted new selection message");
+                                }
+                            } catch (error) {
+                                console.error("[COMMAND] Error managing selection message:", error);
+                                // Fallback to simple post
+                                await client.chat.postMessage({
+                                    channel: channelId,
+                                    thread_ts: messageTs,
+                                    text: `Hi! You selected: ${productTitle} (ASIN: ${asin})`,
+                                    unfurl_links: false
+                                });
+                            }
 
                             // Send ephemeral response to the button clicker
                             const responseBody = {
