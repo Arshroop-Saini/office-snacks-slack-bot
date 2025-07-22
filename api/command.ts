@@ -539,17 +539,9 @@ export async function POST(request: Request) {
 
                         await client.chat.postMessage({
                             channel: channelId,
-                            thread_ts: messageTs,
+                            thread_ts: messageTs, // Reply to the search results message
                             text: buyCommand,
-                            blocks: [
-                                {
-                                    type: "section",
-                                    text: {
-                                        type: "mrkdwn",
-                                        text: `🛒 **Ready to purchase**: ${productTitle}\n\n${buyCommand}\n\n💡 *The bot will process this command automatically in a few seconds...*`
-                                    }
-                                }
-                            ]
+                            unfurl_links: false
                         });
 
                         console.log("[COMMAND] Posted threaded buy command successfully");
