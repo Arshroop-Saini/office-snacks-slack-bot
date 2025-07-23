@@ -192,44 +192,60 @@ export async function handleNewAppMention(
     const isInThread = !!thread_ts && thread_ts !== ts;
     console.log("[DEBUG] Is in thread:", isInThread);
 
-    // If not in a thread, only allow purchase flows - not search queries
-    if (!isInThread) {
-      console.log("[DEBUG] Message not in thread - checking if it's a purchase request");
+    // Check for purchase intent (allow buy flow everywhere)
+    const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
+    const containsAmazonLink = amazonLinkPattern.test(userMessageText);
 
-      // Check for purchase intent (allow buy flow everywhere)
-      const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
-      const containsAmazonLink = amazonLinkPattern.test(userMessageText);
-
-      const buyThisPattern = /buy\s+(this|me this)\s+([A-Z0-9\s]+)/i;
-      const buyThisMatch = userMessageText.match(buyThisPattern);
-      let containsAsinBuy = false;
-      if (buyThisMatch) {
-        const potentialAsin = buyThisMatch[2].trim();
-        if (isASIN(potentialAsin)) {
-          containsAsinBuy = true;
-        }
+    const buyThisPattern = /buy\s+(this|me this)\s+([A-Z0-9\s]+)/i;
+    const buyThisMatch = userMessageText.match(buyThisPattern);
+    let containsAsinBuy = false;
+    if (buyThisMatch) {
+      const potentialAsin = buyThisMatch[2].trim();
+      if (isASIN(potentialAsin)) {
+        containsAsinBuy = true;
       }
-
-      const buyIntentPattern = /\b(buy|purchase|order|get me)\b/i;
-      const containsBuyIntent = buyIntentPattern.test(userMessageText);
-
-      const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
-      console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
-
-      if (!isPurchaseRequest) {
-        // Not a purchase, not in a thread: show help message
-        console.log("[DEBUG] Not a purchase request in main channel/DM - showing help message");
-        await client.chat.postMessage({
-          channel,
-          text: "Please use the `/amazon` command to search for products in this channel or DM. Tagging me with a query only works as a reply in a search results thread.",
-        });
-        return;
-      } else {
-        console.log("[DEBUG] Purchase request detected in main channel/DM - allowing to proceed");
-      }
-    } else {
-      console.log("[DEBUG] Message is in thread - allowing all operations");
     }
+
+    const buyIntentPattern = /\b(buy|purchase|order|get me)\b/i;
+    const containsBuyIntent = buyIntentPattern.test(userMessageText);
+
+    const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
+    console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
+
+    // Check for search queries that should be restricted to threads only
+    const isProductSearchQuery = !isPurchaseRequest && /\b(search|find|look for|show me)\s+(products?|items?|snacks?|headphones?|electronics?|supplies?)\b/i.test(userMessageText);
+    console.log("[DEBUG] Is product search query:", isProductSearchQuery);
+
+    // If not in a thread and it's a product search query, silently ignore
+    if (!isInThread && isProductSearchQuery) {
+      console.log("[DEBUG] Product search query in main channel/DM - ignoring silently");
+      return;
+    }
+
+    // If it's not a purchase request and not a restricted search query, use natural conversation
+    if (!isPurchaseRequest && !isProductSearchQuery) {
+      console.log("[DEBUG] Natural conversation detected - switching to chatbot mode");
+      await updateMessage("💭 Thinking...");
+
+      // Get thread history for context
+      const threadMessages = await getThread(channel, rootTs, botUserId);
+
+      // Get user profile for email
+      const userProfile = await getUserProfile(user);
+      const userEmail = userProfile?.email;
+
+      // Generate natural response using the bot's AI
+      const response = await generateResponse(
+        threadMessages,
+        (status) => updateMessage(status),
+        userEmail ?? undefined
+      );
+
+      await updateMessage(response);
+      return;
+    }
+
+    console.log("[DEBUG] Proceeding with purchase flow or thread-based search");
 
     // PRIORITY CHECK: Is this continuing an ongoing purchase flow?
     const threadMessages = await getThread(channel, rootTs, botUserId);
