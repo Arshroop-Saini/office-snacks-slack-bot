@@ -231,7 +231,7 @@ export async function handleNewAppMention(
       const threadMessages = await getThread(channel, rootTs, botUserId);
 
       // Get user profile for email
-      const userProfile = await getUserProfile(user);
+      const userProfile = user ? await getUserProfile(user) : null;
       const userEmail = userProfile?.email;
 
       // Generate natural response using the bot's AI
