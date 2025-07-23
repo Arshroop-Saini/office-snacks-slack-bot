@@ -2,6 +2,7 @@ import { AppMentionEvent } from "@slack/web-api";
 import { client, getThread, getUserEmail, getUserProfile, getOfficeForTimezone } from "./slack-utils";
 import { generateResponse } from "./generate-response";
 import { amazonSearchTool } from "./tools/amazon-search.tool";
+import { detectUserIntent, UserIntent } from "./intent-detection";
 
 // Product type definition (copied from command.ts)
 type Product = {
@@ -212,28 +213,33 @@ export async function handleNewAppMention(
     const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
     console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
 
-    // Check for search queries that should be restricted to threads only
-    // Pattern 1: Explicit search commands
-    const explicitSearchPattern = /\b(search|find|look for|show me)\s+(products?|items?|snacks?|headphones?|electronics?|supplies?)\b/i;
+    // Use LLM to detect user intent (only if not a purchase request)
+    let userIntent: UserIntent = 'conversation';
+    if (!isPurchaseRequest) {
+      console.log("[DEBUG] Using LLM to detect user intent for:", userMessageText);
+      const intentResult = await detectUserIntent(userMessageText);
+      userIntent = intentResult.intent;
+      console.log("[DEBUG] LLM detected intent:", intentResult.intent, "confidence:", intentResult.confidence, "reasoning:", intentResult.reasoning);
+    } else {
+      userIntent = 'buy';
+      console.log("[DEBUG] Purchase request detected, setting intent to 'buy'");
+    }
 
-    // Pattern 2: Implicit product search (brand names, product types, food/drink items)
-    const implicitSearchPattern = /\b(coca cola|pepsi|energy drinks?|coffee|headphones?|keyboards?|monitors?|chairs?|snacks?|chips|cookies|water|juice|soda|electronics?|office supplies?|wireless|bluetooth|usb|laptop|mouse|tablet|phone|charger|cable|speaker|printer|desk|lamp|pen|paper|notebook|food|drink|beverage|candy|chocolate|nuts|crackers|protein bars?|vitamins?|supplements?)\b/i;
-
-    // Pattern 3: Simple product queries (likely brand names or short product descriptions)
-    const simpleProductPattern = !isPurchaseRequest && userMessageText.length >= 3 && userMessageText.length <= 30 && !/\b(hi|hello|hey|thanks|thank you|how are you|what can you do|help|info|about|tell me about)\b/i.test(userMessageText);
-
-    const isProductSearchQuery = !isPurchaseRequest && (explicitSearchPattern.test(userMessageText) || implicitSearchPattern.test(userMessageText) || simpleProductPattern);
+    const isProductSearchQuery = userIntent === 'search';
     console.log("[DEBUG] Is product search query:", isProductSearchQuery);
-    console.log("[DEBUG] Search patterns - explicit:", explicitSearchPattern.test(userMessageText), "implicit:", implicitSearchPattern.test(userMessageText), "simple:", simpleProductPattern);
 
-    // If not in a thread and it's a product search query, silently ignore
+    // If not in a thread and it's a product search query, redirect to /amazon command
     if (!isInThread && isProductSearchQuery) {
-      console.log("[DEBUG] Product search query in main channel/DM - ignoring silently");
+      console.log("[DEBUG] Product search query in main channel/DM - redirecting to /amazon command");
+      await client.chat.postMessage({
+        channel,
+        text: `I detected you're looking for products! 🔍\n\nFor product searches, please:\n• Use the \`/amazon\` command here\n• Or tag me with your search query in a thread\n\nExample: \`/amazon ${userMessageText}\``,
+      });
       return;
     }
 
-    // If it's not a purchase request and not a restricted search query, use natural conversation
-    if (!isPurchaseRequest && !isProductSearchQuery) {
+    // Handle different intents based on context
+    if (userIntent === 'conversation') {
       console.log("[DEBUG] Natural conversation detected - switching to chatbot mode");
       await updateMessage("💭 Thinking...");
 
@@ -253,6 +259,80 @@ export async function handleNewAppMention(
 
       await updateMessage(response);
       return;
+    }
+
+    // Handle search queries in threads
+    if (userIntent === 'search' && isInThread) {
+      console.log("[DEBUG] Search query detected in thread - executing Amazon search");
+
+      // Check if it's an ASIN query for specific product lookup
+      const isAsinQuery = isASIN(userMessageText.trim());
+      const searchQuery = isAsinQuery ? validateASIN(userMessageText.trim()).normalized : userMessageText;
+
+      if (isAsinQuery) {
+        console.log("[DEBUG] ASIN search detected:", userMessageText);
+        const validation = validateASIN(userMessageText.trim());
+        if (!validation.valid) {
+          await client.chat.postMessage({
+            channel: channel,
+            thread_ts: rootTs,
+            text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
+          });
+          return;
+        }
+        await updateMessage(`Looking up product: ${validation.normalized}`);
+      } else {
+        await updateMessage(`Searching for: "${userMessageText}"`);
+      }
+
+      try {
+        const perPage = isAsinQuery ? 1 : 5;
+        const page = 1;
+
+        const { products, pagination } = await amazonSearchTool.execute({
+          query: searchQuery,
+          page,
+          perPage
+        });
+
+        if (!products.length) {
+          const displayQuery = isAsinQuery ? `ASIN \`${searchQuery}\`` : `"${userMessageText}"`;
+          await client.chat.postMessage({
+            channel: channel,
+            thread_ts: rootTs,
+            text: `No products found for ${displayQuery}. Try a different search term.`
+          });
+          await updateMessage("No products found");
+          return;
+        }
+
+        const totalPages = isAsinQuery ? 1 : (pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1);
+        const blocks = formatProductBlocksStateless(products, page, totalPages, searchQuery);
+
+        // Post results using blocks
+        const resultText = isAsinQuery ? `📦 **Product Details** for ASIN: \`${searchQuery}\`` : `🔍 **Search Results** for "${userMessageText}":`;
+        await client.chat.postMessage({
+          channel: channel,
+          thread_ts: rootTs,
+          text: resultText,
+          blocks,
+          unfurl_links: false
+        });
+
+        await updateMessage("Search completed");
+        return;
+
+      } catch (err) {
+        console.error("[DEBUG] Error in Amazon search:", err);
+        const displayQuery = isAsinQuery ? `ASIN ${searchQuery}` : `"${userMessageText}"`;
+        await client.chat.postMessage({
+          channel: channel,
+          thread_ts: rootTs,
+          text: `Sorry, there was an error searching for ${displayQuery}. Please try again.`
+        });
+        await updateMessage("Error in search");
+        return;
+      }
     }
 
     console.log("[DEBUG] Proceeding with purchase flow or thread-based search");
@@ -392,127 +472,6 @@ export async function handleNewAppMention(
 
         // Purchase requests continue to office detection logic below
         console.log("[DEBUG] PURCHASE FLOW: Continuing to office detection and purchase processing");
-      } else {
-        console.log("[DEBUG] REFINEMENT FLOW: Not a purchase request - checking for refinement scenario");
-
-        // SIMPLIFIED LOGIC: All non-purchase mentions in threads = Independent search
-        console.log("[DEBUG] INDEPENDENT SEARCH: Treating user message as standalone search query");
-
-        // Check if user message is an ASIN query
-        const isAsinQuery = isASIN(userMessageText.trim());
-        if (isAsinQuery) {
-          console.log("[DEBUG] ASIN query detected in thread:", userMessageText);
-          const validation = validateASIN(userMessageText.trim());
-          if (!validation.valid) {
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
-            });
-            return;
-          }
-
-          // Execute ASIN lookup
-          try {
-            const { products } = await amazonSearchTool.execute({
-              query: validation.normalized,
-              page: 1,
-              perPage: 1
-            });
-
-            if (!products.length) {
-              await client.chat.postMessage({
-                channel: channel,
-                thread_ts: rootTs,
-                text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
-              });
-              return;
-            }
-
-            // Format single product (no pagination for ASIN)
-            const blocks = formatProductBlocksStateless([products[0]], 1, 1, validation.normalized, false);
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `Product Details for ASIN: \`${validation.normalized}\``,
-              blocks,
-            });
-            return;
-          } catch (error) {
-            console.error("[DEBUG] Error in ASIN lookup:", error);
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: "Sorry, there was an error looking up that ASIN. Please try again later."
-            });
-            return;
-          }
-        }
-
-        // Execute independent search with user's message (no combining with previous queries)
-        const newQuery = userMessageText.trim();
-        console.log("[DEBUG] Using user message as independent search query:", newQuery);
-
-        if (newQuery.length < 2) {
-          await client.chat.postMessage({
-            channel,
-            thread_ts: rootTs,
-            text: "Please provide a more specific search query (at least 2 characters)."
-          });
-          await updateMessage("Query too short");
-          return;
-        }
-
-        await updateMessage(`Searching for: "${newQuery}"`);
-
-        // Execute independent search
-        try {
-          const perPage = 5;
-          const page = 1;
-          const { products, pagination } = await amazonSearchTool.execute({
-            query: newQuery,
-            page,
-            perPage
-          });
-
-          if (!products.length) {
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `No products found for "${newQuery}". Try a different search term.`
-            });
-            await updateMessage("No products found");
-            return;
-          }
-
-          const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-          const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, newQuery);
-
-          // Post results using blocks (same as /amazon command)
-          await client.chat.postMessage({
-            channel: channel,
-            thread_ts: rootTs,
-            text: `🔍 **Search Results** for "${newQuery}":`,
-            blocks,
-            unfurl_links: false
-          });
-
-          await updateMessage("Search completed");
-          return;
-
-        } catch (err) {
-          console.error("[DEBUG] Error in independent search:", err);
-          await client.chat.postMessage({
-            channel: channel,
-            thread_ts: rootTs,
-            text: `Sorry, there was an error searching for "${newQuery}". Please try again.`
-          });
-          await updateMessage("Error in search");
-          return;
-        }
-
-        // Refinement flow complete - return early to avoid office detection
-        return;
       }
     }
 
