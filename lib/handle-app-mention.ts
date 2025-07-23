@@ -173,9 +173,9 @@ export async function handleNewAppMention(
     return;
   }
 
-  const { thread_ts, channel, user } = event;
+  const { thread_ts, channel, user, ts } = event;
   // Use event.ts if thread_ts is missing (for new messages)
-  const rootTs = thread_ts || (event as any).ts;
+  const rootTs = thread_ts || ts;
   if (!rootTs) {
     console.error('[ERROR] No valid thread_ts or ts found in event:', event);
     return;
@@ -187,6 +187,49 @@ export async function handleNewAppMention(
     // Extract user's message text
     const userMessageText = event.text?.replace(`<@${botUserId}>`, '').trim() || '';
     console.log("[DEBUG] User message text:", userMessageText);
+
+    // Check if this is in a thread (not main channel/DM)
+    const isInThread = !!thread_ts && thread_ts !== ts;
+    console.log("[DEBUG] Is in thread:", isInThread);
+
+    // If not in a thread, only allow purchase flows - not search queries
+    if (!isInThread) {
+      console.log("[DEBUG] Message not in thread - checking if it's a purchase request");
+
+      // Check for purchase intent (allow buy flow everywhere)
+      const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
+      const containsAmazonLink = amazonLinkPattern.test(userMessageText);
+
+      const buyThisPattern = /buy\s+(this|me this)\s+([A-Z0-9\s]+)/i;
+      const buyThisMatch = userMessageText.match(buyThisPattern);
+      let containsAsinBuy = false;
+      if (buyThisMatch) {
+        const potentialAsin = buyThisMatch[2].trim();
+        if (isASIN(potentialAsin)) {
+          containsAsinBuy = true;
+        }
+      }
+
+      const buyIntentPattern = /\b(buy|purchase|order|get me)\b/i;
+      const containsBuyIntent = buyIntentPattern.test(userMessageText);
+
+      const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
+      console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
+
+      if (!isPurchaseRequest) {
+        // Not a purchase, not in a thread: show help message
+        console.log("[DEBUG] Not a purchase request in main channel/DM - showing help message");
+        await client.chat.postMessage({
+          channel,
+          text: "Please use the `/amazon` command to search for products in this channel or DM. Tagging me with a query only works as a reply in a search results thread.",
+        });
+        return;
+      } else {
+        console.log("[DEBUG] Purchase request detected in main channel/DM - allowing to proceed");
+      }
+    } else {
+      console.log("[DEBUG] Message is in thread - allowing all operations");
+    }
 
     // PRIORITY CHECK: Is this continuing an ongoing purchase flow?
     const threadMessages = await getThread(channel, rootTs, botUserId);
