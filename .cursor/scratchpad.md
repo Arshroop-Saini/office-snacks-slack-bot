@@ -359,6 +359,75 @@ Both thread-based flows now work seamlessly:
 ✅ **EST Timezone Fix**: Removed broken buttons, implemented universal manual typing  
 ✅ **Enhanced Office Detection**: Handles both short ("Miami") and full ("Miami Office") names
 
+## COMPLETED: "Select This" Product Buttons with Automated Purchase Flow ✅
+
+### Problem Solved
+Users had no clear way to proceed from search results to actual purchase. The gap between "I found products" and "buy this specific one" was causing friction in the user experience.
+
+### Solution Implemented
+Added "🛒 Select This" buttons to each product result card that:
+
+1. **Automated Purchase Trigger**: Directly posts buy command (`@bot buy me this [ASIN]`) and simulates app mention event
+2. **No Manual Typing Required**: User just clicks button - no need to manually type purchase commands
+3. **Preserved Search Results**: Fixed issue where search results would disappear when buttons were clicked
+4. **Selection Tracking**: Maintains a single `🛒 Selected Products:` message that accumulates all selections
+5. **Duplicate Prevention**: Prevents same product from being added to selection list multiple times
+
+### Technical Implementation Details
+
+**Button Integration:**
+- Added to `formatProductBlocksStateless()` in both `api/command.ts` and `lib/handle-app-mention.ts`
+- Each product gets a "Select This" button with ASIN, product index, and title in button value
+- Primary style with shopping cart emoji for clear visual guidance
+
+**Purchase Flow Automation:**
+```typescript
+// Direct purchase flow trigger (no self-tagging issues)
+const buyCommandText = `<@${botUserId}> buy me this ${asin}`;
+const buyMessage = await client.chat.postMessage({
+    channel: channelId,
+    thread_ts: messageTs,
+    text: buyCommandText
+});
+
+// Simulate app mention to trigger existing purchase logic
+const simulatedEvent = {
+    type: 'app_mention',
+    user: payload.user.id,
+    text: buyCommandText,
+    ts: buyMessage.ts,
+    thread_ts: messageTs,
+    channel: channelId
+};
+handleNewAppMention(simulatedEvent, botUserId);
+```
+
+**Search Results Preservation:**
+- Added `replace_original: false` to all ephemeral responses
+- Fixed duplicate handlers (both URL-encoded and JSON were processing same clicks)
+- Unified selection logic across both content type handlers
+
+**Selection Tracking:**
+- Single accumulated message: `🛒 Selected Products:`
+- Updates existing message instead of creating new ones per selection
+- ASIN-based duplicate detection to prevent double entries
+
+### User Experience Flow
+1. **User searches**: `/amazon energy drinks` → Gets search results with products
+2. **User selects**: Clicks "🛒 Select This" on preferred product
+3. **Bot responds**: Posts buy command in thread and starts purchase flow
+4. **Purchase proceeds**: Bot asks for office selection, processes payment automatically
+5. **Clean tracking**: All selections accumulate in one message, search results stay visible
+
+### Expected Logs
+```
+[COMMAND] Posted buy command message: <@U123> buy me this B0CW7K5ZWK
+[COMMAND] Triggering purchase flow for ASIN: B0CW7K5ZWK
+[COMMAND] Updated existing selection message with new product
+```
+
+This completes the streamlined search → selection → purchase flow that was requested!
+
 ## Project Status Board
 
 ### Completed ✅

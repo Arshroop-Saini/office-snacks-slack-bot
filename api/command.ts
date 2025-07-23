@@ -319,129 +319,48 @@ export async function POST(request: Request) {
                 }
                 // Handle product selection buttons
                 else if (action.action_id.startsWith("select_product_")) {
-                    setTimeout(async () => {
-                        try {
-                            const { asin, productIndex, productTitle } = parsedValue;
+                    try {
+                        const { asin, productIndex, productTitle } = parsedValue;
 
-                            // Get channel and message timestamp for threading
-                            const channelId = payload.container.channel_id;
-                            const messageTs = payload.container.message_ts;
+                        // Get channel and message timestamp for threading
+                        const channelId = payload.container.channel_id;
+                        const messageTs = payload.container.message_ts;
 
-                            console.log("[COMMAND] Creating threaded buy command for:", { asin, productTitle, channelId, messageTs });
+                        console.log("[COMMAND] Creating threaded buy command for:", { asin, productTitle, channelId, messageTs });
 
-                            // Post buy command message and directly trigger purchase flow
-                            const botUserId = await getBotId();
-                            const buyCommandText = `<@${botUserId}> buy me this ${asin}`;
+                        // Simply post buy command message in thread
+                        const botUserId = await getBotId();
+                        const buyCommandText = `<@${botUserId}> buy me this ${asin}`;
 
-                            const buyMessage = await client.chat.postMessage({
-                                channel: channelId,
-                                thread_ts: messageTs,
-                                text: buyCommandText,
-                                unfurl_links: false
-                            });
+                        await client.chat.postMessage({
+                            channel: channelId,
+                            thread_ts: messageTs,
+                            text: buyCommandText,
+                            unfurl_links: false
+                        });
 
-                            console.log("[COMMAND] Posted buy command message:", buyCommandText);
+                        console.log("[COMMAND] Posted buy command message:", buyCommandText);
 
-                            // Simulate app mention event to trigger purchase flow
-                            if (buyMessage.ts) {
-                                const { handleNewAppMention } = await import('../lib/handle-app-mention');
-                                const simulatedEvent = {
-                                    type: 'app_mention' as const,
-                                    user: payload.user.id,
-                                    text: buyCommandText,
-                                    ts: buyMessage.ts,
-                                    thread_ts: messageTs,
-                                    channel: channelId,
-                                    event_ts: String(Date.now() / 1000)
-                                };
-
-                                console.log("[COMMAND] Triggering purchase flow for ASIN:", asin);
-                                // Don't await - let it run async to avoid blocking the response
-                                handleNewAppMention(simulatedEvent, botUserId).catch(err => {
-                                    console.error("[COMMAND] Error in simulated app mention:", err);
-                                });
-                            }
-
-                            // Also update/create selection tracking message
-                            try {
-                                const threadReplies = await client.conversations.replies({
-                                    channel: channelId,
-                                    ts: messageTs,
-                                    limit: 10
-                                });
-
-                                // Look for existing selection message posted by the bot
-                                const existingSelectionMessage = threadReplies.messages?.find(msg =>
-                                    msg.bot_id && msg.text?.includes("🛒 Selected Products:")
-                                );
-
-                                console.log("[COMMAND] Found", threadReplies.messages?.length || 0, "messages in thread");
-                                console.log("[COMMAND] Existing selection message found:", !!existingSelectionMessage);
-
-                                if (existingSelectionMessage) {
-                                    // Check if this product is already in the list to avoid duplicates
-                                    const currentSelections = existingSelectionMessage.text || "";
-                                    if (!currentSelections.includes(asin)) {
-                                        const newText = currentSelections + `\n• ${productTitle} (ASIN: ${asin})`;
-
-                                        await client.chat.update({
-                                            channel: channelId,
-                                            ts: existingSelectionMessage.ts!,
-                                            text: newText
-                                        });
-                                        console.log("[COMMAND] Updated existing selection message with new product");
-                                    } else {
-                                        console.log("[COMMAND] Product already in selection list, skipping");
-                                    }
-                                } else {
-                                    // Create new selection message
-                                    await client.chat.postMessage({
-                                        channel: channelId,
-                                        thread_ts: messageTs,
-                                        text: `🛒 Selected Products:\n• ${productTitle} (ASIN: ${asin})`,
-                                        unfurl_links: false
-                                    });
-                                    console.log("[COMMAND] Posted new selection message");
-                                }
-                            } catch (error) {
-                                console.error("[COMMAND] Error managing selection message:", error);
-                                // Selection tracking is non-critical, continue with purchase flow
-                            }
-
-                            // Send ephemeral response to the button clicker (non-replacing)
-                            const responseBody = {
-                                response_type: "ephemeral",
-                                replace_original: false,  // Keep original search results visible
-                                text: "✅ Product added to selection!"
-                            };
-
-                            await fetch(payload.response_url, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(responseBody),
-                            });
-                        } catch (err) {
-                            console.error("[COMMAND] (async) Error in select_product:", err);
-                            // Send error response (non-replacing)
-                            await fetch(payload.response_url, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                    response_type: "ephemeral",
-                                    replace_original: false,  // Keep original search results visible
-                                    text: "❌ Error adding product to selection. Please try again."
-                                }),
-                            });
-                        }
-                    }, 0);
-                    return new Response(JSON.stringify({
-                        text: "Adding to selection...",
-                        response_type: "ephemeral",
-                        replace_original: false  // Keep original search results visible
-                    }), {
-                        status: 200,
-                        headers: { "Content-Type": "application/json" },
-                    });
+                        // Send success response immediately
+                        return new Response(JSON.stringify({
+                            response_type: "ephemeral",
+                            replace_original: false,
+                            text: `✅ Buy command posted: "${productTitle}"`
+                        }), {
+                            status: 200,
+                            headers: { "Content-Type": "application/json" },
+                        });
+                    } catch (err) {
+                        console.error("[COMMAND] Error in select_product:", err);
+                        return new Response(JSON.stringify({
+                            response_type: "ephemeral",
+                            replace_original: false,
+                            text: "❌ Error posting buy command. Please try again."
+                        }), {
+                            status: 200,
+                            headers: { "Content-Type": "application/json" },
+                        });
+                    }
                 }
             }
             return new Response("", { status: 200 });
@@ -649,129 +568,48 @@ export async function POST(request: Request) {
             const responseUrl = payload.response_url;
 
             if (action.action_id.startsWith("select_product_")) {
-                setTimeout(async () => {
-                    try {
-                        const { asin, productIndex, productTitle } = parsedValue;
+                try {
+                    const { asin, productIndex, productTitle } = parsedValue;
 
-                        // Get channel and message timestamp for threading
-                        const channelId = payload.container.channel_id;
-                        const messageTs = payload.container.message_ts;
+                    // Get channel and message timestamp for threading
+                    const channelId = payload.container.channel_id;
+                    const messageTs = payload.container.message_ts;
 
-                        console.log("[COMMAND] (JSON) Creating threaded selection for:", { asin, productTitle, channelId, messageTs });
+                    console.log("[COMMAND] (JSON) Creating threaded selection for:", { asin, productTitle, channelId, messageTs });
 
-                        // Post buy command message and directly trigger purchase flow
-                        const botUserId = await getBotId();
-                        const buyCommandText = `<@${botUserId}> buy me this ${asin}`;
+                    // Simply post buy command message in thread
+                    const botUserId = await getBotId();
+                    const buyCommandText = `<@${botUserId}> buy me this ${asin}`;
 
-                        const buyMessage = await client.chat.postMessage({
-                            channel: channelId,
-                            thread_ts: messageTs,
-                            text: buyCommandText,
-                            unfurl_links: false
-                        });
+                    await client.chat.postMessage({
+                        channel: channelId,
+                        thread_ts: messageTs,
+                        text: buyCommandText,
+                        unfurl_links: false
+                    });
 
-                        console.log("[COMMAND] (JSON) Posted buy command message:", buyCommandText);
+                    console.log("[COMMAND] (JSON) Posted buy command message:", buyCommandText);
 
-                        // Simulate app mention event to trigger purchase flow
-                        if (buyMessage.ts) {
-                            const { handleNewAppMention } = await import('../lib/handle-app-mention');
-                            const simulatedEvent = {
-                                type: 'app_mention' as const,
-                                user: payload.user.id,
-                                text: buyCommandText,
-                                ts: buyMessage.ts,
-                                thread_ts: messageTs,
-                                channel: channelId,
-                                event_ts: String(Date.now() / 1000)
-                            };
-
-                            console.log("[COMMAND] (JSON) Triggering purchase flow for ASIN:", asin);
-                            // Don't await - let it run async to avoid blocking the response
-                            handleNewAppMention(simulatedEvent, botUserId).catch(err => {
-                                console.error("[COMMAND] (JSON) Error in simulated app mention:", err);
-                            });
-                        }
-
-                        // Also update/create selection tracking message
-                        try {
-                            const threadReplies = await client.conversations.replies({
-                                channel: channelId,
-                                ts: messageTs,
-                                limit: 10
-                            });
-
-                            // Look for existing selection message posted by the bot
-                            const existingSelectionMessage = threadReplies.messages?.find(msg =>
-                                msg.bot_id && msg.text?.includes("🛒 Selected Products:")
-                            );
-
-                            console.log("[COMMAND] (JSON) Found", threadReplies.messages?.length || 0, "messages in thread");
-                            console.log("[COMMAND] (JSON) Existing selection message found:", !!existingSelectionMessage);
-
-                            if (existingSelectionMessage) {
-                                // Check if this product is already in the list to avoid duplicates
-                                const currentSelections = existingSelectionMessage.text || "";
-                                if (!currentSelections.includes(asin)) {
-                                    const newText = currentSelections + `\n• ${productTitle} (ASIN: ${asin})`;
-
-                                    await client.chat.update({
-                                        channel: channelId,
-                                        ts: existingSelectionMessage.ts!,
-                                        text: newText
-                                    });
-                                    console.log("[COMMAND] (JSON) Updated existing selection message with new product");
-                                } else {
-                                    console.log("[COMMAND] (JSON) Product already in selection list, skipping");
-                                }
-                            } else {
-                                // Create new selection message
-                                await client.chat.postMessage({
-                                    channel: channelId,
-                                    thread_ts: messageTs,
-                                    text: `🛒 Selected Products:\n• ${productTitle} (ASIN: ${asin})`,
-                                    unfurl_links: false
-                                });
-                                console.log("[COMMAND] (JSON) Posted new selection message");
-                            }
-                        } catch (error) {
-                            console.error("[COMMAND] (JSON) Error managing selection message:", error);
-                            // Selection tracking is non-critical, continue with purchase flow
-                        }
-
-                        // Send ephemeral response to the button clicker (non-replacing)
-                        const responseBody = {
-                            response_type: "ephemeral",
-                            replace_original: false,  // Keep original search results visible
-                            text: "✅ Product added to selection!"
-                        };
-
-                        await fetch(responseUrl, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(responseBody),
-                        });
-                    } catch (err) {
-                        console.error("[COMMAND] (JSON) (async) Error in select_product:", err);
-                        // Send error response (non-replacing)
-                        await fetch(responseUrl, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                response_type: "ephemeral",
-                                replace_original: false,  // Keep original search results visible
-                                text: "❌ Error adding product to selection. Please try again."
-                            }),
-                        });
-                    }
-                }, 0);
-                return new Response(JSON.stringify({
-                    text: "Adding to selection...",
-                    response_type: "ephemeral",
-                    replace_original: false  // Keep original search results visible
-                }), {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                });
+                    // Send success response immediately
+                    return new Response(JSON.stringify({
+                        response_type: "ephemeral",
+                        replace_original: false,
+                        text: `✅ Buy command posted: "${productTitle}"`
+                    }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                } catch (err) {
+                    console.error("[COMMAND] (JSON) Error in select_product:", err);
+                    return new Response(JSON.stringify({
+                        response_type: "ephemeral",
+                        replace_original: false,
+                        text: "❌ Error posting buy command. Please try again."
+                    }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
             }
         }
         return new Response("", { status: 200 });
