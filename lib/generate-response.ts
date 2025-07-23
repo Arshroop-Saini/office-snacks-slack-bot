@@ -140,14 +140,8 @@ export const generateResponse = async (
   // list all the available tool names
   console.log("🛠️ Available tools:", Object.keys(tools));
 
-  // Inject the user's email as a message if available
+  // Include user email in system context instead of as a fake user message
   let messagesWithEmail = messages;
-  if (userEmail) {
-    messagesWithEmail = [
-      ...messages,
-      { role: "user", content: `My email address is ${userEmail}` }
-    ];
-  }
 
   try {
     const generateTextResponse = await generateText({
@@ -247,12 +241,14 @@ You have access to various tools to help users. Use them when appropriate for us
 - search_amazon_products: Search for products
 
 **When to Use These Tools:**
-- "What's my balance?" → use get_balance
-- "What's my wallet address?" → use get_address
-- "Show me office locations" → use get_office_addresses
-- "Recommend some snacks" → use get_recommended_snacks
-- "What network am I on?" → use get_chain
-- Any crypto/wallet related questions → use appropriate wallet tools
+- "What's my balance?" → ALWAYS use get_balance tool
+- "What's my wallet address?" → ALWAYS use get_address tool
+- "Show me office locations" → ALWAYS use get_office_addresses tool
+- "Recommend some snacks" → ALWAYS use get_recommended_snacks tool
+- "What network am I on?" → ALWAYS use get_chain tool
+- Any crypto/wallet related questions → ALWAYS use appropriate wallet tools
+
+**IMPORTANT**: When users ask about wallet balance, you MUST use the get_balance tool. Do NOT provide cached or remembered balance information. Always fetch the current balance using the tool.
 
 ## For Buy/Purchase Queries:
 When users say "buy this [URL/ASIN]" or similar purchase commands:
