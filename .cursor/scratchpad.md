@@ -428,6 +428,86 @@ handleNewAppMention(simulatedEvent, botUserId);
 
 This completes the streamlined search → selection → purchase flow that was requested!
 
+## COMPLETED: Purchase vs Refinement Flow Separation ✅
+
+### Problem Solved
+Refinement queries (like `@bot green cases only`) were incorrectly triggering office detection and purchase flow instead of just performing search refinement. Users expected refinement to only search and display results, not ask for office location.
+
+### Root Cause Identified
+The `handleNewAppMention` function had a **flow-through issue**:
+1. Refinement logic would execute and post results
+2. **BUT** the function would continue executing and fall through to office detection logic
+3. This caused refinement queries to trigger "I couldn't detect your office location" messages
+
+### Solution Implemented
+**Clear Flow Separation with Early Returns:**
+
+**1. Purchase Intent Detection:**
+```typescript
+// Detect purchase vs refinement intent
+const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
+
+// Purchase patterns detected:
+// - Amazon URLs
+// - "buy this B0123456789" 
+// - "buy", "purchase", "order", "get me" keywords
+```
+
+**2. Explicit Flow Routing:**
+```typescript
+if (isPurchaseRequest) {
+  console.log("[DEBUG] PURCHASE FLOW: Processing purchase request");
+  // Handle Amazon links, ASIN buys, general purchase requests
+  // Continue to office detection logic
+} else {
+  console.log("[DEBUG] REFINEMENT FLOW: Not a purchase request");
+  // Handle refinement queries
+  // Search API + display results
+  return; // ⭐ EARLY RETURN prevents office detection
+}
+```
+
+**3. Improved Buy Intent Detection:**
+- Enhanced ASIN pattern: `/buy\s+(this|me this)\s+([A-Z0-9\s]+)/i`
+- General buy keywords: `/\b(buy|purchase|order|get me)\b/i`
+- Multiple validation layers
+
+### Expected User Experience
+
+**✅ Refinement Query (No Office Detection):**
+```
+User: /amazon iPhone cases
+Bot: [Shows search results]
+User: @bot green cases only
+Bot: 🔍 Refined Search Results for "iPhone cases green cases":
+     [Shows refined results] 
+     ✅ NO office location prompt
+```
+
+**✅ Purchase Request (With Office Detection):**
+```
+User: @bot buy me this B0123456789
+Bot: Processing ASIN purchase...
+Bot: I couldn't detect your office location. Please reply with...
+     ✅ Office detection works as expected
+```
+
+### Key Improvements
+- **Clean Flow Separation**: Purchase and refinement are completely isolated
+- **Early Returns**: Refinement flow returns immediately after displaying results
+- **Better Intent Detection**: Multiple patterns for detecting purchase vs refinement
+- **Comprehensive Debugging**: Clear logging shows which flow is executing
+- **User-Friendly Messages**: Clear error messages when no search context exists
+
+### Test Scenarios Covered
+✅ **Refinement queries**: No office detection triggered  
+✅ **ASIN purchases**: Office detection works  
+✅ **Amazon URL purchases**: Office detection works  
+✅ **General buy requests**: Office detection works  
+✅ **Invalid refinements**: Helpful error messages  
+
+This fix ensures the bot behaves intuitively - refinement queries only refine searches, purchase requests only trigger purchases.
+
 ## Project Status Board
 
 ### Completed ✅

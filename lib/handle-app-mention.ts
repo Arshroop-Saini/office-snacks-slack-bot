@@ -210,13 +210,13 @@ export async function handleNewAppMention(
     console.log("[DEBUG] Contains Amazon link:", containsAmazonLink);
 
     // Check if user's message contains "buy this" with an ASIN
-    const buyThisPattern = /buy\s+this\s+([A-Z0-9\s]+)/i;
+    const buyThisPattern = /buy\s+(this|me this)\s+([A-Z0-9\s]+)/i;
     const buyThisMatch = userMessageText.match(buyThisPattern);
     let containsAsinBuy = false;
     let asinFromBuyMessage = '';
 
     if (buyThisMatch) {
-      const potentialAsin = buyThisMatch[1].trim();
+      const potentialAsin = buyThisMatch[2].trim();
       if (isASIN(potentialAsin)) {
         containsAsinBuy = true;
         asinFromBuyMessage = potentialAsin;
@@ -224,66 +224,86 @@ export async function handleNewAppMention(
       }
     }
 
-    if (containsAmazonLink) {
-      console.log("[DEBUG] Amazon link detected - skipping refinement logic entirely, proceeding with normal buying flow");
-      await updateMessage("Processing Amazon link for purchase...");
-      // Skip ALL refinement logic and proceed with normal mention handling
-    } else if (containsAsinBuy) {
-      console.log("[DEBUG] ASIN buy detected - fetching product details and proceeding with buying flow");
-      await updateMessage("Looking up product details for purchase...");
+    // Check for general buy intent keywords
+    const buyIntentPattern = /\b(buy|purchase|order|get me)\b/i;
+    const containsBuyIntent = buyIntentPattern.test(userMessageText);
+    console.log("[DEBUG] Contains buy intent:", containsBuyIntent);
 
-      try {
-        // Validate ASIN first
-        const validation = validateASIN(asinFromBuyMessage);
-        if (!validation.valid) {
+    // Determine if this is a purchase request or a refinement query
+    const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
+    console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
+
+    if (isPurchaseRequest) {
+      console.log("[DEBUG] PURCHASE FLOW: Processing purchase request");
+
+      if (containsAmazonLink) {
+        console.log("[DEBUG] Amazon link detected - proceeding with normal buying flow");
+        await updateMessage("Processing Amazon link for purchase...");
+        // Continue to office detection and purchase flow
+      } else if (containsAsinBuy) {
+        console.log("[DEBUG] ASIN buy detected - fetching product details and proceeding with buying flow");
+        await updateMessage("Looking up product details for purchase...");
+
+        try {
+          // Validate ASIN first
+          const validation = validateASIN(asinFromBuyMessage);
+          if (!validation.valid) {
+            await client.chat.postMessage({
+              channel,
+              thread_ts: rootTs,
+              text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
+            });
+            return;
+          }
+
+          // Fetch product details using SearchAPI
+          const { products } = await amazonSearchTool.execute({
+            query: validation.normalized,
+            page: 1,
+            perPage: 1
+          });
+
+          if (!products.length) {
+            await client.chat.postMessage({
+              channel,
+              thread_ts: rootTs,
+              text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
+            });
+            return;
+          }
+
+          // Extract the Amazon URL from the product
+          const productUrl = products[0].url;
+          console.log("[DEBUG] Found product URL for ASIN:", productUrl);
+
+          // Replace the user's message with Amazon URL format for the buying flow
+          // This allows the existing Crossmint tools to process it correctly
+          if (buyThisMatch && event.text) {
+            event.text = event.text.replace(buyThisMatch[0], `buy this ${productUrl}`);
+            console.log("[DEBUG] Modified user message for buying flow:", event.text);
+          }
+
+          await updateMessage("Processing ASIN purchase...");
+          // Continue to office detection and purchase flow
+        } catch (error) {
+          console.error("[DEBUG] Error in ASIN buy lookup:", error);
           await client.chat.postMessage({
             channel,
             thread_ts: rootTs,
-            text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
+            text: "Sorry, there was an error looking up that ASIN for purchase. Please try again later."
           });
           return;
         }
-
-        // Fetch product details using SearchAPI
-        const { products } = await amazonSearchTool.execute({
-          query: validation.normalized,
-          page: 1,
-          perPage: 1
-        });
-
-        if (!products.length) {
-          await client.chat.postMessage({
-            channel,
-            thread_ts: rootTs,
-            text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
-          });
-          return;
-        }
-
-        // Extract the Amazon URL from the product
-        const productUrl = products[0].url;
-        console.log("[DEBUG] Found product URL for ASIN:", productUrl);
-
-        // Replace the user's message with Amazon URL format for the buying flow
-        // This allows the existing Crossmint tools to process it correctly
-        if (buyThisMatch && event.text) {
-          event.text = event.text.replace(buyThisMatch[0], `buy this ${productUrl}`);
-          console.log("[DEBUG] Modified user message for buying flow:", event.text);
-        }
-
-        await updateMessage("Processing ASIN purchase...");
-        // Skip ALL refinement logic and proceed with normal mention handling
-      } catch (error) {
-        console.error("[DEBUG] Error in ASIN buy lookup:", error);
-        await client.chat.postMessage({
-          channel,
-          thread_ts: rootTs,
-          text: "Sorry, there was an error looking up that ASIN for purchase. Please try again later."
-        });
-        return;
+      } else {
+        console.log("[DEBUG] General buy intent detected - proceeding with buying flow");
+        await updateMessage("Processing purchase request...");
+        // Continue to office detection and purchase flow
       }
+
+      // Purchase requests continue to office detection logic below
+      console.log("[DEBUG] PURCHASE FLOW: Continuing to office detection and purchase processing");
     } else {
-      console.log("[DEBUG] No Amazon link detected - checking for refinement scenario");
+      console.log("[DEBUG] REFINEMENT FLOW: Not a purchase request - checking for refinement scenario");
 
       // Check if this looks like an office selection (part of buying flow)
       const officeNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
@@ -456,9 +476,22 @@ export async function handleNewAppMention(
           }
         } else {
           console.log("[DEBUG] No bot Amazon search message found in thread - not a refinement scenario");
+          await client.chat.postMessage({
+            channel,
+            thread_ts: rootTs,
+            text: "I didn't find any previous search results in this thread to refine. Use `/amazon [query]` to start a new search, or mention me with a purchase request."
+          });
+          await updateMessage("No search context found");
+          return;
         }
       }
+
+      // Refinement flow complete - return early to avoid office detection
+      return;
     }
+
+    // PURCHASE FLOW: Office detection and user profile processing
+    console.log("[DEBUG] PURCHASE FLOW: Starting office detection logic");
 
     // Fetch user profile (email, timezone)
     let userEmail: string | undefined = undefined;
