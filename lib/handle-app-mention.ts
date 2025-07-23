@@ -233,6 +233,7 @@ export async function handleNewAppMention(
       console.log("[DEBUG] Product search query in main channel/DM - redirecting to /amazon command");
       await client.chat.postMessage({
         channel,
+        thread_ts: rootTs, // Reply in thread to the original message
         text: `I detected you're looking for products! 🔍\n\nFor product searches, please:\n• Use the \`/amazon\` command here\n• Or tag me with your search query in a thread\n\nExample: \`/amazon ${userMessageText}\``,
       });
       return;
