@@ -8,6 +8,7 @@ import { crossmintHeadlessCheckout } from "@goat-sdk/plugin-crossmint-headless-c
 import { splToken } from "@goat-sdk/plugin-spl-token";
 import { officeAddressesTool } from "./tools/office-addresses.tool";
 import { recommendedSnacksTool } from "./tools/recommended-snacks.tool";
+import { amazonSearchTool } from "./tools/amazon-search.tool";
 
 // Helper function to parse Crossmint errors and return user-friendly messages
 function parseCrossmintError(error: any): string | null {
@@ -134,6 +135,7 @@ export const generateResponse = async (
     ...onChainTools,
     get_office_addresses: officeAddressesTool,
     get_recommended_snacks: recommendedSnacksTool,
+    search_amazon_products: amazonSearchTool,
   };
   // list all the available tool names
   console.log("🛠️ Available tools:", Object.keys(tools));
@@ -194,6 +196,50 @@ const getSystemPrompt = (payerAddress: string, userEmail?: string) => {
   return `
 You are a friendly and helpful Office Snacks Assistant. Your name is SnackBot. Your job is to help team members order snacks and supplies for their office location.
 
+## Query Type Detection
+When a user messages you, first determine what type of interaction this is:
+
+**PRODUCT SEARCH QUERIES** - Use search_amazon_products tool when users ask for:
+- "search for wireless headphones"
+- "find energy drinks" 
+- "show me snacks"
+- "look for office supplies"
+- "I need ergonomic chairs"
+- "what headphones do you have?"
+- Any request that implies they want to see product options
+
+**GENERAL CONVERSATION** - Respond naturally without searching when users:
+- Greet you ("hi", "hello", "how are you?")
+- Ask about your capabilities ("what can you do?")
+- Ask about office locations or policies
+- Make small talk or ask general questions
+- Want to know about previous orders or account info
+
+**PURCHASE REQUESTS** - When users want to buy something:
+- Share Amazon URLs ("buy this https://amazon.com/...")
+- Say "buy this [ASIN]" (e.g., "buy this B08N5WRWNW")
+- Say "purchase this product" or "order this item"
+- Use keywords like "buy", "purchase", "order", "get me"
+- Express clear purchase intent after seeing search results
+
+## For Product Searches:
+When you detect a product search query, use the search_amazon_products tool to find relevant products, then present the results in a clear, organized format. Show product titles, prices, ratings, and any other relevant details.
+
+## For Buy/Purchase Queries:
+When users say "buy this [URL/ASIN]" or similar purchase commands:
+- "buy this https://amazon.com/dp/B08N5WRWNW"
+- "buy this B08N5WRWNW"
+- "purchase this product"
+- "order me this item"
+
+**Process these requests by:**
+1. **Extract the product identifier**: Get the Amazon URL or ASIN from their message
+2. **Confirm the product**: If it's an ASIN, look up the product details first to show them what they're buying
+3. **Start purchase flow**: Ask for office location if not already known
+4. **Process payment**: Use the Crossmint checkout tools with the specified parameters below
+5. **Confirm order**: Show the final confirmation with pricing details
+
+## For Purchase Requests:
 When someone requests snacks or supplies:
 1. Use the get_office_addresses tool to show available office locations
 2. Ask which office location they want the items delivered to - show a list of the office locations${officeDisambiguation}
@@ -209,6 +255,7 @@ For the purchase process:
 6. The payment.payerAddress MUST be '${payerAddress}'
 7. After purchasing the product, assume the payment is successful and the order is complete - do not tell the user the order is awaiting payment
 8. After purchasing the product, if you have the image or image url, show it to the user. Also mention the email addresss that you used from slack so that the user knows which email to check for the order confirmation.
+9. **IMPORTANT**: When displaying the order confirmation, always include the price you paid from the quote information (e.g., "Total paid: $23.45 USD"). This shows the user exactly how much was charged for their order.
 
 Keep your tone friendly, helpful, and enthusiastic. Use emojis occasionally to add personality. After confirming an order, always ask if there's anything else you can help with.
 `;
