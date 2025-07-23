@@ -307,7 +307,7 @@ export async function handleNewAppMention(
         }
 
         const totalPages = isAsinQuery ? 1 : (pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1);
-        const blocks = formatProductBlocksStateless(products, page, totalPages, searchQuery);
+        const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, searchQuery);
 
         // Post results using blocks
         const resultText = isAsinQuery ? `📦 **Product Details** for ASIN: \`${searchQuery}\`` : `🔍 **Search Results** for "${userMessageText}":`;
