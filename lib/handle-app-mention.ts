@@ -199,142 +199,100 @@ export async function handleNewAppMention(
   try {
     const updateMessage = await updateStatusUtil("is thinking...", event);
 
-    // NEW: Check for Amazon links FIRST before any refinement logic
     // Extract user's message text
     const userMessageText = event.text?.replace(`<@${botUserId}>`, '').trim() || '';
     console.log("[DEBUG] User message text:", userMessageText);
 
-    // Check if user's message contains an Amazon link
-    const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
-    const containsAmazonLink = amazonLinkPattern.test(userMessageText);
-    console.log("[DEBUG] Contains Amazon link:", containsAmazonLink);
+    // PRIORITY CHECK: Is this continuing an ongoing purchase flow?
+    const threadMessages = await getThread(channel, rootTs, botUserId);
 
-    // Check if user's message contains "buy this" with an ASIN
-    const buyThisPattern = /buy\s+(this|me this)\s+([A-Z0-9\s]+)/i;
-    const buyThisMatch = userMessageText.match(buyThisPattern);
-    let containsAsinBuy = false;
-    let asinFromBuyMessage = '';
+    // Check if purchase flow is active (not completed)
+    const hasActivePurchaseFlow = threadMessages.some(msg =>
+      msg.role === 'assistant' &&
+      typeof msg.content === 'string' &&
+      (msg.content.includes('office location') ||
+        msg.content.includes('choose from:') ||
+        (msg.content.includes('Processing') && msg.content.includes('purchase')))
+    );
 
-    if (buyThisMatch) {
-      const potentialAsin = buyThisMatch[2].trim();
-      if (isASIN(potentialAsin)) {
-        containsAsinBuy = true;
-        asinFromBuyMessage = potentialAsin;
-        console.log("[DEBUG] ASIN buy detected:", asinFromBuyMessage);
-      }
-    }
+    // Check if purchase flow was completed (order placed)
+    const hasPurchaseCompleted = threadMessages.some(msg =>
+      msg.role === 'assistant' &&
+      typeof msg.content === 'string' &&
+      (msg.content.includes('Order confirmed') ||
+        msg.content.includes('order is complete') ||
+        msg.content.includes('purchase successful') ||
+        msg.content.includes('✅'))
+    );
 
-    // Check for general buy intent keywords
-    const buyIntentPattern = /\b(buy|purchase|order|get me)\b/i;
-    const containsBuyIntent = buyIntentPattern.test(userMessageText);
-    console.log("[DEBUG] Contains buy intent:", containsBuyIntent);
+    const isOfficeSelection = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"].some(office =>
+      userMessageText.toLowerCase().includes(office.toLowerCase())
+    );
 
-    // Determine if this is a purchase request or a refinement query
-    const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
-    console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
-
-    if (isPurchaseRequest) {
-      console.log("[DEBUG] PURCHASE FLOW: Processing purchase request");
-
-      if (containsAmazonLink) {
-        console.log("[DEBUG] Amazon link detected - proceeding with normal buying flow");
-        await updateMessage("Processing Amazon link for purchase...");
-        // Continue to office detection and purchase flow
-      } else if (containsAsinBuy) {
-        console.log("[DEBUG] ASIN buy detected - fetching product details and proceeding with buying flow");
-        await updateMessage("Looking up product details for purchase...");
-
-        try {
-          // Validate ASIN first
-          const validation = validateASIN(asinFromBuyMessage);
-          if (!validation.valid) {
-            await client.chat.postMessage({
-              channel,
-              thread_ts: rootTs,
-              text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
-            });
-            return;
-          }
-
-          // Fetch product details using SearchAPI
-          const { products } = await amazonSearchTool.execute({
-            query: validation.normalized,
-            page: 1,
-            perPage: 1
-          });
-
-          if (!products.length) {
-            await client.chat.postMessage({
-              channel,
-              thread_ts: rootTs,
-              text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
-            });
-            return;
-          }
-
-          // Extract the Amazon URL from the product
-          const productUrl = products[0].url;
-          console.log("[DEBUG] Found product URL for ASIN:", productUrl);
-
-          // Replace the user's message with Amazon URL format for the buying flow
-          // This allows the existing Crossmint tools to process it correctly
-          if (buyThisMatch && event.text) {
-            event.text = event.text.replace(buyThisMatch[0], `buy this ${productUrl}`);
-            console.log("[DEBUG] Modified user message for buying flow:", event.text);
-          }
-
-          await updateMessage("Processing ASIN purchase...");
-          // Continue to office detection and purchase flow
-        } catch (error) {
-          console.error("[DEBUG] Error in ASIN buy lookup:", error);
-          await client.chat.postMessage({
-            channel,
-            thread_ts: rootTs,
-            text: "Sorry, there was an error looking up that ASIN for purchase. Please try again later."
-          });
-          return;
-        }
-      } else {
-        console.log("[DEBUG] General buy intent detected - proceeding with buying flow");
-        await updateMessage("Processing purchase request...");
-        // Continue to office detection and purchase flow
-      }
-
-      // Purchase requests continue to office detection logic below
-      console.log("[DEBUG] PURCHASE FLOW: Continuing to office detection and purchase processing");
+    // Purchase flow state logic
+    if (hasActivePurchaseFlow && !hasPurchaseCompleted && isOfficeSelection) {
+      console.log("[DEBUG] PURCHASE CONTINUATION: Office selection for ongoing purchase - bypassing intent analysis");
+      await updateMessage("Processing office selection...");
+      // Skip ALL intent analysis and go directly to purchase flow
+    } else if (hasPurchaseCompleted) {
+      console.log("[DEBUG] PURCHASE COMPLETED: Previous purchase completed - resuming intent analysis for new requests");
+      console.log("[DEBUG] INTENT ANALYSIS: Analyzing intent for new request");
     } else {
-      console.log("[DEBUG] REFINEMENT FLOW: Not a purchase request - checking for refinement scenario");
+      console.log("[DEBUG] INTENT ANALYSIS: No active purchase flow - analyzing intent for new request");
 
-      // Check if this looks like an office selection (part of buying flow)
-      const officeNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
-      const looksLikeOfficeSelection = officeNames.some(office =>
-        userMessageText.toLowerCase().includes(office.toLowerCase())
-      );
-      console.log("[DEBUG] Looks like office selection:", looksLikeOfficeSelection);
+      // Check if user's message contains an Amazon link
+      const amazonLinkPattern = /(amazon\.com|amazon\.co\.|amzn\.to|amazon\.ca|amazon\.de|amazon\.fr|amazon\.it|amazon\.es|amazon\.in|amazon\.com\.au|amazon\.com\.br|amazon\.com\.mx|amazon\.co\.jp)/i;
+      const containsAmazonLink = amazonLinkPattern.test(userMessageText);
+      console.log("[DEBUG] Contains Amazon link:", containsAmazonLink);
 
-      if (looksLikeOfficeSelection) {
-        console.log("[DEBUG] Office selection detected - skipping refinement logic, proceeding with buying flow");
-        await updateMessage("Processing office selection...");
-        // Skip refinement logic and proceed with normal mention handling (buying flow)
-      } else {
-        console.log("[DEBUG] Not office selection - checking for refinement scenario");
+      // Check if user's message contains "buy this" with an ASIN
+      const buyThisPattern = /buy\s+(this|me this)\s+([A-Z0-9\s]+)/i;
+      const buyThisMatch = userMessageText.match(buyThisPattern);
+      let containsAsinBuy = false;
+      let asinFromBuyMessage = '';
 
-        // Check if user message is an ASIN query (treat as new lookup, not refinement)
-        const isAsinQuery = isASIN(userMessageText.trim());
-        if (isAsinQuery) {
-          console.log("[DEBUG] ASIN query detected in thread:", userMessageText);
-          const validation = validateASIN(userMessageText.trim());
-          if (!validation.valid) {
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
-            });
-            return;
-          }
+      if (buyThisMatch) {
+        const potentialAsin = buyThisMatch[2].trim();
+        if (isASIN(potentialAsin)) {
+          containsAsinBuy = true;
+          asinFromBuyMessage = potentialAsin;
+          console.log("[DEBUG] ASIN buy detected:", asinFromBuyMessage);
+        }
+      }
 
-          // Execute ASIN lookup
+      // Check for general buy intent keywords
+      const buyIntentPattern = /\b(buy|purchase|order|get me)\b/i;
+      const containsBuyIntent = buyIntentPattern.test(userMessageText);
+      console.log("[DEBUG] Contains buy intent:", containsBuyIntent);
+
+      // Determine if this is a purchase request or a refinement query
+      const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
+      console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
+
+      if (isPurchaseRequest) {
+        console.log("[DEBUG] PURCHASE FLOW: Processing purchase request");
+
+        if (containsAmazonLink) {
+          console.log("[DEBUG] Amazon link detected - proceeding with normal buying flow");
+          await updateMessage("Processing Amazon link for purchase...");
+          // Continue to office detection and purchase flow
+        } else if (containsAsinBuy) {
+          console.log("[DEBUG] ASIN buy detected - fetching product details and proceeding with buying flow");
+          await updateMessage("Looking up product details for purchase...");
+
           try {
+            // Validate ASIN first
+            const validation = validateASIN(asinFromBuyMessage);
+            if (!validation.valid) {
+              await client.chat.postMessage({
+                channel,
+                thread_ts: rootTs,
+                text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
+              });
+              return;
+            }
+
+            // Fetch product details using SearchAPI
             const { products } = await amazonSearchTool.execute({
               query: validation.normalized,
               page: 1,
@@ -343,163 +301,306 @@ export async function handleNewAppMention(
 
             if (!products.length) {
               await client.chat.postMessage({
-                channel: channel,
+                channel,
                 thread_ts: rootTs,
                 text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
               });
               return;
             }
 
-            // Format single product (no pagination for ASIN)
-            const blocks = formatProductBlocksStateless([products[0]], 1, 1, validation.normalized, false);
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `Product Details for ASIN: \`${validation.normalized}\``,
-              blocks,
-            });
-            return;
+            // Extract the Amazon URL from the product
+            const productUrl = products[0].url;
+            console.log("[DEBUG] Found product URL for ASIN:", productUrl);
+
+            // Replace the user's message with Amazon URL format for the buying flow
+            // This allows the existing Crossmint tools to process it correctly
+            if (buyThisMatch && event.text) {
+              event.text = event.text.replace(buyThisMatch[0], `buy this ${productUrl}`);
+              console.log("[DEBUG] Modified user message for buying flow:", event.text);
+            }
+
+            await updateMessage("Processing ASIN purchase...");
+            // Continue to office detection and purchase flow
           } catch (error) {
-            console.error("[DEBUG] Error in ASIN lookup:", error);
+            console.error("[DEBUG] Error in ASIN buy lookup:", error);
             await client.chat.postMessage({
-              channel: channel,
+              channel,
               thread_ts: rootTs,
-              text: "Sorry, there was an error looking up that ASIN. Please try again later."
+              text: "Sorry, there was an error looking up that ASIN for purchase. Please try again later."
             });
             return;
           }
+        } else {
+          console.log("[DEBUG] General buy intent detected - proceeding with buying flow");
+          await updateMessage("Processing purchase request...");
+          // Continue to office detection and purchase flow
         }
 
-        // Only check for refinement scenario if no Amazon link AND not office selection AND not ASIN
-        console.log("[DEBUG] Checking for refinement scenario in thread");
+        // Purchase requests continue to office detection logic below
+        console.log("[DEBUG] PURCHASE FLOW: Continuing to office detection and purchase processing");
+      } else {
+        console.log("[DEBUG] REFINEMENT FLOW: Not a purchase request - checking for refinement scenario");
 
-        const threadMessages = await getThread(channel, rootTs, botUserId);
-        console.log("[DEBUG] Thread messages count:", threadMessages.length);
+        // Check if this looks like an office selection (part of buying flow)
+        const officeNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
+        const looksLikeOfficeSelection = officeNames.some(office =>
+          userMessageText.toLowerCase().includes(office.toLowerCase())
+        );
+        console.log("[DEBUG] Looks like office selection:", looksLikeOfficeSelection);
 
-        // Find the most recent Amazon search result message (supports multiple refinements)
-        console.log("[DEBUG] All thread messages:", threadMessages.map(msg => ({
-          role: msg.role,
-          content: typeof msg.content === 'string' ? msg.content.substring(0, 100) : 'non-string-content'
-        })));
+        if (looksLikeOfficeSelection) {
+          console.log("[DEBUG] Office selection detected - skipping refinement logic, proceeding with buying flow");
+          await updateMessage("Processing office selection...");
+          // Skip refinement logic and proceed with normal mention handling (buying flow)
+        } else {
+          console.log("[DEBUG] Not office selection - checking for refinement scenario");
 
-        const botResponseMessage = threadMessages
-          .filter(msg => {
-            const isAssistant = msg.role === 'assistant';
-            const hasContent = typeof msg.content === 'string';
-            const hasSearchResults = hasContent && typeof msg.content === 'string' && (
-              msg.content.includes('Amazon search results for') ||
-              msg.content.includes('Amazon Results for') ||
-              msg.content.includes('Refined Search Results')
-            );
-            console.log("[DEBUG] Message check:", {
-              isAssistant,
-              hasContent,
-              hasSearchResults,
-              content: typeof msg.content === 'string' ? msg.content.substring(0, 50) : 'non-string'
-            });
-            return isAssistant && hasContent && hasSearchResults;
-          })
-          .pop(); // Get the last/most recent one
-
-        if (botResponseMessage && typeof botResponseMessage.content === 'string') {
-          console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
-
-          // Try multiple regex patterns to handle different formats
-          console.log("[DEBUG] Trying to extract query from:", botResponseMessage.content);
-
-          let match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
-          console.log("[DEBUG] Pattern 1 result:", match);
-
-          if (!match) {
-            match = botResponseMessage.content.match(/Amazon Results for:[\\s]*\`([^`]+)\`/);
-            console.log("[DEBUG] Pattern 2 result:", match);
-          }
-          if (!match) {
-            match = botResponseMessage.content.match(/Refined Search Results.*?for[\\s]*"([^"]+)"/);
-            console.log("[DEBUG] Pattern 3 result:", match);
-          }
-          if (!match) {
-            match = botResponseMessage.content.match(/Amazon.*?for[:\\s]+"([^"]+)"/);
-            console.log("[DEBUG] Pattern 4 result:", match);
-          }
-          if (!match) {
-            // Fallback: try to extract any quoted text after "for"
-            match = botResponseMessage.content.match(/for[\\s]+"([^"]+)"/);
-            console.log("[DEBUG] Fallback pattern result:", match);
-          }
-
-          if (match) {
-            const originalQuery = match[1].trim(); // Extract from quotes/backticks
-            console.log("[DEBUG] ✅ Successfully extracted original query:", originalQuery);
-
-            // Combine original query with refinement
-            const combinedQuery = combineQueries(originalQuery, userMessageText);
-            console.log("[DEBUG] User refinement text:", userMessageText);
-            console.log("[DEBUG] Combined query:", combinedQuery);
-
-            // Validate that the combined query is different enough to warrant a new search
-            if (combinedQuery === originalQuery) {
-              console.log("[DEBUG] Combined query same as original, no refinement needed");
+          // Check if user message is an ASIN query (treat as new lookup, not refinement)
+          const isAsinQuery = isASIN(userMessageText.trim());
+          if (isAsinQuery) {
+            console.log("[DEBUG] ASIN query detected in thread:", userMessageText);
+            const validation = validateASIN(userMessageText.trim());
+            if (!validation.valid) {
               await client.chat.postMessage({
                 channel: channel,
                 thread_ts: rootTs,
-                text: `Your refinement didn't add specific search terms. Try being more specific about what you're looking for (e.g., "green", "under $20", "wireless", etc.)`
+                text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
               });
-              await updateMessage("Refinement too vague");
               return;
             }
 
-            await updateMessage(`Searching for refined query: "${combinedQuery}"`);
-
-            // Execute Amazon search with combined query
+            // Execute ASIN lookup
             try {
-              const perPage = 5;
-              const page = 1;
-              const { products, pagination } = await amazonSearchTool.execute({
-                query: combinedQuery,
-                page,
-                perPage
+              const { products } = await amazonSearchTool.execute({
+                query: validation.normalized,
+                page: 1,
+                perPage: 1
               });
 
               if (!products.length) {
                 await client.chat.postMessage({
                   channel: channel,
                   thread_ts: rootTs,
-                  text: `No products found for refined search: "${combinedQuery}". Try a different refinement or go back to the original results.`
+                  text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
                 });
-                await updateMessage("No products found for refined search");
                 return;
               }
 
-              const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-              const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, combinedQuery);
-
-              // Post results using blocks (same as /amazon command)
+              // Format single product (no pagination for ASIN)
+              const blocks = formatProductBlocksStateless([products[0]], 1, 1, validation.normalized, false);
               await client.chat.postMessage({
                 channel: channel,
                 thread_ts: rootTs,
-                text: `🔍 **Refined Search Results** for "${combinedQuery}":`,
+                text: `Product Details for ASIN: \`${validation.normalized}\``,
                 blocks,
-                unfurl_links: false
               });
-
-              await updateMessage("Refined search completed");
               return;
-
-            } catch (err) {
-              console.error("[DEBUG] Error in refined Amazon search:", err);
+            } catch (error) {
+              console.error("[DEBUG] Error in ASIN lookup:", error);
               await client.chat.postMessage({
                 channel: channel,
                 thread_ts: rootTs,
-                text: `Sorry, there was an error with your refined search. Please try again or use the original results.`
+                text: "Sorry, there was an error looking up that ASIN. Please try again later."
               });
-              await updateMessage("Error in refined search");
               return;
             }
+          }
+
+          // Only check for refinement scenario if no Amazon link AND not office selection AND not ASIN
+          console.log("[DEBUG] Checking for refinement scenario in thread");
+
+          const threadMessages = await getThread(channel, rootTs, botUserId);
+          console.log("[DEBUG] Thread messages count:", threadMessages.length);
+
+          // Find the most recent Amazon search result message (supports multiple refinements)
+          console.log("[DEBUG] All thread messages:", threadMessages.map(msg => ({
+            role: msg.role,
+            content: typeof msg.content === 'string' ? msg.content.substring(0, 100) : 'non-string-content'
+          })));
+
+          const botResponseMessage = threadMessages
+            .filter(msg => {
+              const isAssistant = msg.role === 'assistant';
+              const hasContent = typeof msg.content === 'string';
+              const hasSearchResults = hasContent && typeof msg.content === 'string' && (
+                msg.content.includes('Amazon search results for') ||
+                msg.content.includes('Amazon Results for') ||
+                msg.content.includes('Refined Search Results')
+              );
+              console.log("[DEBUG] Message check:", {
+                isAssistant,
+                hasContent,
+                hasSearchResults,
+                content: typeof msg.content === 'string' ? msg.content.substring(0, 50) : 'non-string'
+              });
+              return isAssistant && hasContent && hasSearchResults;
+            })
+            .pop(); // Get the last/most recent one
+
+          if (botResponseMessage && typeof botResponseMessage.content === 'string') {
+            console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
+
+            // Try multiple regex patterns to handle different formats
+            console.log("[DEBUG] Trying to extract query from:", botResponseMessage.content);
+
+            let match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
+            console.log("[DEBUG] Pattern 1 result:", match);
+
+            if (!match) {
+              match = botResponseMessage.content.match(/Amazon Results for:[\\s]*\`([^`]+)\`/);
+              console.log("[DEBUG] Pattern 2 result:", match);
+            }
+            if (!match) {
+              match = botResponseMessage.content.match(/Refined Search Results.*?for[\\s]*"([^"]+)"/);
+              console.log("[DEBUG] Pattern 3 result:", match);
+            }
+            if (!match) {
+              match = botResponseMessage.content.match(/Amazon.*?for[:\\s]+"([^"]+)"/);
+              console.log("[DEBUG] Pattern 4 result:", match);
+            }
+            if (!match) {
+              // Fallback: try to extract any quoted text after "for"
+              match = botResponseMessage.content.match(/for[\\s]+"([^"]+)"/);
+              console.log("[DEBUG] Fallback pattern result:", match);
+            }
+
+            if (match) {
+              const originalQuery = match[1].trim(); // Extract from quotes/backticks
+              console.log("[DEBUG] ✅ Successfully extracted original query:", originalQuery);
+
+              // Combine original query with refinement
+              const combinedQuery = combineQueries(originalQuery, userMessageText);
+              console.log("[DEBUG] User refinement text:", userMessageText);
+              console.log("[DEBUG] Combined query:", combinedQuery);
+
+              // Validate that the combined query is different enough to warrant a new search
+              if (combinedQuery === originalQuery) {
+                console.log("[DEBUG] Combined query same as original, no refinement needed");
+                await client.chat.postMessage({
+                  channel: channel,
+                  thread_ts: rootTs,
+                  text: `Your refinement didn't add specific search terms. Try being more specific about what you're looking for (e.g., "green", "under $20", "wireless", etc.)`
+                });
+                await updateMessage("Refinement too vague");
+                return;
+              }
+
+              await updateMessage(`Searching for refined query: "${combinedQuery}"`);
+
+              // Execute Amazon search with combined query
+              try {
+                const perPage = 5;
+                const page = 1;
+                const { products, pagination } = await amazonSearchTool.execute({
+                  query: combinedQuery,
+                  page,
+                  perPage
+                });
+
+                if (!products.length) {
+                  await client.chat.postMessage({
+                    channel: channel,
+                    thread_ts: rootTs,
+                    text: `No products found for refined search: "${combinedQuery}". Try a different refinement or go back to the original results.`
+                  });
+                  await updateMessage("No products found for refined search");
+                  return;
+                }
+
+                const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+                const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, combinedQuery);
+
+                // Post results using blocks (same as /amazon command)
+                await client.chat.postMessage({
+                  channel: channel,
+                  thread_ts: rootTs,
+                  text: `🔍 **Refined Search Results** for "${combinedQuery}":`,
+                  blocks,
+                  unfurl_links: false
+                });
+
+                await updateMessage("Refined search completed");
+                return;
+
+              } catch (err) {
+                console.error("[DEBUG] Error in refined Amazon search:", err);
+                await client.chat.postMessage({
+                  channel: channel,
+                  thread_ts: rootTs,
+                  text: `Sorry, there was an error with your refined search. Please try again or use the original results.`
+                });
+                await updateMessage("Error in refined search");
+                return;
+              }
+            } else {
+              console.log("[DEBUG] ❌ Could not extract original query from bot message");
+              console.log("[DEBUG] Bot message content:", botResponseMessage.content);
+              console.log("[DEBUG] Treating user message as new search query");
+
+              // Fallback: treat user message as a brand new search query
+              const newQuery = userMessageText.trim();
+              console.log("[DEBUG] Using user message as new query:", newQuery);
+
+              if (newQuery.length < 2) {
+                await client.chat.postMessage({
+                  channel,
+                  thread_ts: rootTs,
+                  text: "Please provide a more specific search query (at least 2 characters)."
+                });
+                await updateMessage("Query too short");
+                return;
+              }
+
+              await updateMessage(`Searching for: "${newQuery}"`);
+
+              // Execute new search with user's message
+              try {
+                const perPage = 5;
+                const page = 1;
+                const { products, pagination } = await amazonSearchTool.execute({
+                  query: newQuery,
+                  page,
+                  perPage
+                });
+
+                if (!products.length) {
+                  await client.chat.postMessage({
+                    channel: channel,
+                    thread_ts: rootTs,
+                    text: `No products found for "${newQuery}". Try a different search term.`
+                  });
+                  await updateMessage("No products found");
+                  return;
+                }
+
+                const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+                const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, newQuery);
+
+                // Post results using blocks (same as /amazon command)
+                await client.chat.postMessage({
+                  channel: channel,
+                  thread_ts: rootTs,
+                  text: `🔍 **Search Results** for "${newQuery}":`,
+                  blocks,
+                  unfurl_links: false
+                });
+
+                await updateMessage("Search completed");
+                return;
+
+              } catch (err) {
+                console.error("[DEBUG] Error in new search:", err);
+                await client.chat.postMessage({
+                  channel: channel,
+                  thread_ts: rootTs,
+                  text: `Sorry, there was an error searching for "${newQuery}". Please try again.`
+                });
+                await updateMessage("Error in search");
+                return;
+              }
+            }
           } else {
-            console.log("[DEBUG] ❌ Could not extract original query from bot message");
-            console.log("[DEBUG] Bot message content:", botResponseMessage.content);
-            console.log("[DEBUG] Treating user message as new search query");
+            console.log("[DEBUG] No bot Amazon search message found in thread - treating as new search");
 
             // Fallback: treat user message as a brand new search query
             const newQuery = userMessageText.trim();
@@ -563,75 +664,11 @@ export async function handleNewAppMention(
               return;
             }
           }
-        } else {
-          console.log("[DEBUG] No bot Amazon search message found in thread - treating as new search");
-
-          // Fallback: treat user message as a brand new search query
-          const newQuery = userMessageText.trim();
-          console.log("[DEBUG] Using user message as new query:", newQuery);
-
-          if (newQuery.length < 2) {
-            await client.chat.postMessage({
-              channel,
-              thread_ts: rootTs,
-              text: "Please provide a more specific search query (at least 2 characters)."
-            });
-            await updateMessage("Query too short");
-            return;
-          }
-
-          await updateMessage(`Searching for: "${newQuery}"`);
-
-          // Execute new search with user's message
-          try {
-            const perPage = 5;
-            const page = 1;
-            const { products, pagination } = await amazonSearchTool.execute({
-              query: newQuery,
-              page,
-              perPage
-            });
-
-            if (!products.length) {
-              await client.chat.postMessage({
-                channel: channel,
-                thread_ts: rootTs,
-                text: `No products found for "${newQuery}". Try a different search term.`
-              });
-              await updateMessage("No products found");
-              return;
-            }
-
-            const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-            const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, newQuery);
-
-            // Post results using blocks (same as /amazon command)
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `🔍 **Search Results** for "${newQuery}":`,
-              blocks,
-              unfurl_links: false
-            });
-
-            await updateMessage("Search completed");
-            return;
-
-          } catch (err) {
-            console.error("[DEBUG] Error in new search:", err);
-            await client.chat.postMessage({
-              channel: channel,
-              thread_ts: rootTs,
-              text: `Sorry, there was an error searching for "${newQuery}". Please try again.`
-            });
-            await updateMessage("Error in search");
-            return;
-          }
         }
-      }
 
-      // Refinement flow complete - return early to avoid office detection
-      return;
+        // Refinement flow complete - return early to avoid office detection
+        return;
+      }
     }
 
     // PURCHASE FLOW: Office detection and user profile processing
