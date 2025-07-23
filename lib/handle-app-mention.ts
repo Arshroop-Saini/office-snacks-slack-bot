@@ -31,10 +31,21 @@ function validateASIN(asin: string): { valid: boolean; normalized: string } {
   };
 }
 
-// Simple query combination function
+// Intelligent query combination function
 function combineQueries(originalQuery: string, refinement: string): string {
-  // Simple approach: just combine with a space
-  return `${originalQuery} ${refinement}`.trim();
+  // Clean up refinement text - remove common phrases that don't add search value
+  let cleanRefinement = refinement
+    .replace(/^(hey|hi|hello|actually|i was|i am|i'm|looking for|i want|i need|can you|please|find|search)/i, '')
+    .replace(/(only|just|specifically|particularly)/i, '')
+    .trim();
+
+  // If refinement is very short or empty after cleaning, return original
+  if (cleanRefinement.length < 3) {
+    return originalQuery;
+  }
+
+  // Combine original query with cleaned refinement
+  return `${originalQuery} ${cleanRefinement}`.trim();
 }
 
 // Helper to generate pagination buttons (copied from command.ts)
@@ -340,23 +351,59 @@ export async function handleNewAppMention(
         }
 
         // Only check for refinement scenario if no Amazon link AND not office selection AND not ASIN
+        console.log("[DEBUG] Checking for refinement scenario in thread");
+
         const threadMessages = await getThread(channel, rootTs, botUserId);
-        const botResponseMessage = threadMessages.find(msg =>
-          msg.role === 'assistant' &&
-          typeof msg.content === 'string' &&
-          msg.content.includes('Amazon search results for')
-        );
+        console.log("[DEBUG] Thread messages count:", threadMessages.length);
+
+        // Find the most recent Amazon search result message (supports multiple refinements)
+        const botResponseMessage = threadMessages
+          .filter(msg =>
+            msg.role === 'assistant' &&
+            typeof msg.content === 'string' &&
+            (msg.content.includes('Amazon search results for') ||
+              msg.content.includes('Amazon Results for') ||
+              msg.content.includes('Refined Search Results'))
+          )
+          .pop(); // Get the last/most recent one
 
         if (botResponseMessage && typeof botResponseMessage.content === 'string') {
           console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
-          const match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
+
+          // Try multiple regex patterns to handle different formats
+          let match = botResponseMessage.content.match(/Amazon search results for[\\"]([^"\\]+)[\\"]/);
+          if (!match) {
+            match = botResponseMessage.content.match(/Amazon Results for:[\\s]*\`([^`]+)\`/);
+          }
+          if (!match) {
+            match = botResponseMessage.content.match(/Refined Search Results.*?for[\\s]*["`']([^"`']+)["`']/);
+          }
+          if (!match) {
+            match = botResponseMessage.content.match(/Amazon.*?for[:\\s]+["`']([^"`']+)["`']/);
+          }
+
           if (match) {
-            const originalQuery = match[1].trim(); // Extract from quotes
+            const originalQuery = match[1].trim(); // Extract from quotes/backticks
             console.log("[DEBUG] Extracted original query:", originalQuery);
 
             // Combine original query with refinement
             const combinedQuery = combineQueries(originalQuery, userMessageText);
+            console.log("[DEBUG] User refinement text:", userMessageText);
             console.log("[DEBUG] Combined query:", combinedQuery);
+
+            // Validate that the combined query is different enough to warrant a new search
+            if (combinedQuery === originalQuery) {
+              console.log("[DEBUG] Combined query same as original, no refinement needed");
+              await client.chat.postMessage({
+                channel: channel,
+                thread_ts: rootTs,
+                text: `Your refinement didn't add specific search terms. Try being more specific about what you're looking for (e.g., "green", "under $20", "wireless", etc.)`
+              });
+              await updateMessage("Refinement too vague");
+              return;
+            }
+
+            await updateMessage(`Searching for refined query: "${combinedQuery}"`);
 
             // Execute Amazon search with combined query
             try {
@@ -372,7 +419,7 @@ export async function handleNewAppMention(
                 await client.chat.postMessage({
                   channel: channel,
                   thread_ts: rootTs,
-                  text: `No products found for refined search: "${combinedQuery}"`
+                  text: `No products found for refined search: "${combinedQuery}". Try a different refinement or go back to the original results.`
                 });
                 await updateMessage("No products found for refined search");
                 return;
@@ -385,7 +432,7 @@ export async function handleNewAppMention(
               await client.chat.postMessage({
                 channel: channel,
                 thread_ts: rootTs,
-                text: `Refined Amazon search results for "${combinedQuery}":`,
+                text: `🔍 **Refined Search Results** for "${combinedQuery}":`,
                 blocks,
                 unfurl_links: false
               });
@@ -398,12 +445,17 @@ export async function handleNewAppMention(
               await client.chat.postMessage({
                 channel: channel,
                 thread_ts: rootTs,
-                text: `Sorry, there was an error with your refined search. Please try again.`
+                text: `Sorry, there was an error with your refined search. Please try again or use the original results.`
               });
               await updateMessage("Error in refined search");
               return;
             }
+          } else {
+            console.log("[DEBUG] Could not extract original query from bot message");
+            console.log("[DEBUG] Bot message content:", botResponseMessage.content);
           }
+        } else {
+          console.log("[DEBUG] No bot Amazon search message found in thread - not a refinement scenario");
         }
       }
     }
