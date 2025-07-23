@@ -213,8 +213,18 @@ export async function handleNewAppMention(
     console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
 
     // Check for search queries that should be restricted to threads only
-    const isProductSearchQuery = !isPurchaseRequest && /\b(search|find|look for|show me)\s+(products?|items?|snacks?|headphones?|electronics?|supplies?)\b/i.test(userMessageText);
+    // Pattern 1: Explicit search commands
+    const explicitSearchPattern = /\b(search|find|look for|show me)\s+(products?|items?|snacks?|headphones?|electronics?|supplies?)\b/i;
+
+    // Pattern 2: Implicit product search (brand names, product types, food/drink items)
+    const implicitSearchPattern = /\b(coca cola|pepsi|energy drinks?|coffee|headphones?|keyboards?|monitors?|chairs?|snacks?|chips|cookies|water|juice|soda|electronics?|office supplies?|wireless|bluetooth|usb|laptop|mouse|tablet|phone|charger|cable|speaker|printer|desk|lamp|pen|paper|notebook|food|drink|beverage|candy|chocolate|nuts|crackers|protein bars?|vitamins?|supplements?)\b/i;
+
+    // Pattern 3: Simple product queries (likely brand names or short product descriptions)
+    const simpleProductPattern = !isPurchaseRequest && userMessageText.length >= 3 && userMessageText.length <= 30 && !/\b(hi|hello|hey|thanks|thank you|how are you|what can you do|help|info|about|tell me about)\b/i.test(userMessageText);
+
+    const isProductSearchQuery = !isPurchaseRequest && (explicitSearchPattern.test(userMessageText) || implicitSearchPattern.test(userMessageText) || simpleProductPattern);
     console.log("[DEBUG] Is product search query:", isProductSearchQuery);
+    console.log("[DEBUG] Search patterns - explicit:", explicitSearchPattern.test(userMessageText), "implicit:", implicitSearchPattern.test(userMessageText), "simple:", simpleProductPattern);
 
     // If not in a thread and it's a product search query, silently ignore
     if (!isInThread && isProductSearchQuery) {
