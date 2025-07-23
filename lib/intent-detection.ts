@@ -26,9 +26,9 @@ export async function detectUserIntent(userMessage: string): Promise<IntentDetec
 - Product names, brand names, categories, or requests to find/search for items
 - NOT general questions about the bot or conversation
 
-**CONVERSATION INTENT**: General chat, questions about the bot, greetings
-- Examples: "what is your name?", "hi", "how are you?", "what can you do?", "help"
-- Questions about bot capabilities, greetings, thanks, general conversation
+**CONVERSATION INTENT**: General chat, questions about the bot, greetings, wallet queries, office info
+- Examples: "what is your name?", "hi", "how are you?", "what can you do?", "help", "check balance", "what's my balance?", "how much SOL do I have?", "what's my wallet address?", "show me office locations", "recommend snacks", "what network am I on?"
+- Questions about bot capabilities, greetings, thanks, general conversation, wallet/crypto queries, office information requests
 
 Respond with ONLY a JSON object in this exact format:
 {
