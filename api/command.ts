@@ -330,7 +330,7 @@ export async function POST(request: Request) {
 
                         // Simply post buy command message in thread
                         const botUserId = await getBotId();
-                        const buyCommandText = `<@${botUserId}> buy me this ${asin}`;
+                        const buyCommandText = `Please copy this command and paste it in the thread or the channel to buy this product: <@${botUserId}> buy me this ${asin}`;
 
                         await client.chat.postMessage({
                             channel: channelId,
