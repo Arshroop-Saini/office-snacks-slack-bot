@@ -31,22 +31,7 @@ function validateASIN(asin: string): { valid: boolean; normalized: string } {
   };
 }
 
-// Intelligent query combination function
-function combineQueries(originalQuery: string, refinement: string): string {
-  // Clean up refinement text - remove common phrases that don't add search value
-  let cleanRefinement = refinement
-    .replace(/^(hey|hi|hello|actually|i was|i am|i'm|looking for|i want|i need|can you|please|find|search)/i, '')
-    .replace(/(only|just|specifically|particularly)/i, '')
-    .trim();
-
-  // If refinement is very short or empty after cleaning, return original
-  if (cleanRefinement.length < 3) {
-    return originalQuery;
-  }
-
-  // Combine original query with cleaned refinement
-  return `${originalQuery} ${cleanRefinement}`.trim();
-}
+// Note: Query combination removed - all searches are now independent
 
 // Helper to generate pagination buttons (copied from command.ts)
 function getPaginationElements(query: string, page: number, totalPages: number, loading: boolean = false) {
@@ -341,329 +326,120 @@ export async function handleNewAppMention(
       } else {
         console.log("[DEBUG] REFINEMENT FLOW: Not a purchase request - checking for refinement scenario");
 
-        // Check if this looks like an office selection (part of buying flow)
-        const officeNames = ["Miami Office", "New York Office", "Buenos Aires Office", "Madrid Office", "Miami", "New York", "Buenos Aires", "Madrid"];
-        const looksLikeOfficeSelection = officeNames.some(office =>
-          userMessageText.toLowerCase().includes(office.toLowerCase())
-        );
-        console.log("[DEBUG] Looks like office selection:", looksLikeOfficeSelection);
+        // SIMPLIFIED LOGIC: All non-purchase mentions in threads = Independent search
+        console.log("[DEBUG] INDEPENDENT SEARCH: Treating user message as standalone search query");
 
-        if (looksLikeOfficeSelection) {
-          console.log("[DEBUG] Office selection detected - skipping refinement logic, proceeding with buying flow");
-          await updateMessage("Processing office selection...");
-          // Skip refinement logic and proceed with normal mention handling (buying flow)
-        } else {
-          console.log("[DEBUG] Not office selection - checking for refinement scenario");
-
-          // Check if user message is an ASIN query (treat as new lookup, not refinement)
-          const isAsinQuery = isASIN(userMessageText.trim());
-          if (isAsinQuery) {
-            console.log("[DEBUG] ASIN query detected in thread:", userMessageText);
-            const validation = validateASIN(userMessageText.trim());
-            if (!validation.valid) {
-              await client.chat.postMessage({
-                channel: channel,
-                thread_ts: rootTs,
-                text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
-              });
-              return;
-            }
-
-            // Execute ASIN lookup
-            try {
-              const { products } = await amazonSearchTool.execute({
-                query: validation.normalized,
-                page: 1,
-                perPage: 1
-              });
-
-              if (!products.length) {
-                await client.chat.postMessage({
-                  channel: channel,
-                  thread_ts: rootTs,
-                  text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
-                });
-                return;
-              }
-
-              // Format single product (no pagination for ASIN)
-              const blocks = formatProductBlocksStateless([products[0]], 1, 1, validation.normalized, false);
-              await client.chat.postMessage({
-                channel: channel,
-                thread_ts: rootTs,
-                text: `Product Details for ASIN: \`${validation.normalized}\``,
-                blocks,
-              });
-              return;
-            } catch (error) {
-              console.error("[DEBUG] Error in ASIN lookup:", error);
-              await client.chat.postMessage({
-                channel: channel,
-                thread_ts: rootTs,
-                text: "Sorry, there was an error looking up that ASIN. Please try again later."
-              });
-              return;
-            }
+        // Check if user message is an ASIN query
+        const isAsinQuery = isASIN(userMessageText.trim());
+        if (isAsinQuery) {
+          console.log("[DEBUG] ASIN query detected in thread:", userMessageText);
+          const validation = validateASIN(userMessageText.trim());
+          if (!validation.valid) {
+            await client.chat.postMessage({
+              channel: channel,
+              thread_ts: rootTs,
+              text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
+            });
+            return;
           }
 
-          // Only check for refinement scenario if no Amazon link AND not office selection AND not ASIN
-          console.log("[DEBUG] Checking for refinement scenario in thread");
+          // Execute ASIN lookup
+          try {
+            const { products } = await amazonSearchTool.execute({
+              query: validation.normalized,
+              page: 1,
+              perPage: 1
+            });
 
-          const threadMessages = await getThread(channel, rootTs, botUserId);
-          console.log("[DEBUG] Thread messages count:", threadMessages.length);
-
-          // Find the most recent Amazon search result message (supports multiple refinements)
-          console.log("[DEBUG] All thread messages:", threadMessages.map(msg => ({
-            role: msg.role,
-            content: typeof msg.content === 'string' ? msg.content.substring(0, 100) : 'non-string-content'
-          })));
-
-          const botResponseMessage = threadMessages
-            .filter(msg => {
-              const isAssistant = msg.role === 'assistant';
-              const hasContent = typeof msg.content === 'string';
-              const hasSearchResults = hasContent && typeof msg.content === 'string' && (
-                msg.content.includes('Amazon search results for') ||
-                msg.content.includes('Amazon Results for') ||
-                msg.content.includes('Refined Search Results')
-              );
-              console.log("[DEBUG] Message check:", {
-                isAssistant,
-                hasContent,
-                hasSearchResults,
-                content: typeof msg.content === 'string' ? msg.content.substring(0, 50) : 'non-string'
-              });
-              return isAssistant && hasContent && hasSearchResults;
-            })
-            .pop(); // Get the last/most recent one
-
-          if (botResponseMessage && typeof botResponseMessage.content === 'string') {
-            console.log("[DEBUG] Found bot response message:", botResponseMessage.content);
-
-            // Try multiple regex patterns to handle different formats
-            console.log("[DEBUG] Trying to extract query from:", botResponseMessage.content);
-
-            let match = botResponseMessage.content.match(/Amazon search results for "([^"]+)":/);
-            console.log("[DEBUG] Pattern 1 result:", match);
-
-            if (!match) {
-              match = botResponseMessage.content.match(/Amazon Results for:[\\s]*\`([^`]+)\`/);
-              console.log("[DEBUG] Pattern 2 result:", match);
-            }
-            if (!match) {
-              match = botResponseMessage.content.match(/Refined Search Results.*?for[\\s]*"([^"]+)"/);
-              console.log("[DEBUG] Pattern 3 result:", match);
-            }
-            if (!match) {
-              match = botResponseMessage.content.match(/Amazon.*?for[:\\s]+"([^"]+)"/);
-              console.log("[DEBUG] Pattern 4 result:", match);
-            }
-            if (!match) {
-              // Fallback: try to extract any quoted text after "for"
-              match = botResponseMessage.content.match(/for[\\s]+"([^"]+)"/);
-              console.log("[DEBUG] Fallback pattern result:", match);
-            }
-
-            if (match) {
-              const originalQuery = match[1].trim(); // Extract from quotes/backticks
-              console.log("[DEBUG] ✅ Successfully extracted original query:", originalQuery);
-
-              // Combine original query with refinement
-              const combinedQuery = combineQueries(originalQuery, userMessageText);
-              console.log("[DEBUG] User refinement text:", userMessageText);
-              console.log("[DEBUG] Combined query:", combinedQuery);
-
-              // Validate that the combined query is different enough to warrant a new search
-              if (combinedQuery === originalQuery) {
-                console.log("[DEBUG] Combined query same as original, no refinement needed");
-                await client.chat.postMessage({
-                  channel: channel,
-                  thread_ts: rootTs,
-                  text: `Your refinement didn't add specific search terms. Try being more specific about what you're looking for (e.g., "green", "under $20", "wireless", etc.)`
-                });
-                await updateMessage("Refinement too vague");
-                return;
-              }
-
-              await updateMessage(`Searching for refined query: "${combinedQuery}"`);
-
-              // Execute Amazon search with combined query
-              try {
-                const perPage = 5;
-                const page = 1;
-                const { products, pagination } = await amazonSearchTool.execute({
-                  query: combinedQuery,
-                  page,
-                  perPage
-                });
-
-                if (!products.length) {
-                  await client.chat.postMessage({
-                    channel: channel,
-                    thread_ts: rootTs,
-                    text: `No products found for refined search: "${combinedQuery}". Try a different refinement or go back to the original results.`
-                  });
-                  await updateMessage("No products found for refined search");
-                  return;
-                }
-
-                const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-                const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, combinedQuery);
-
-                // Post results using blocks (same as /amazon command)
-                await client.chat.postMessage({
-                  channel: channel,
-                  thread_ts: rootTs,
-                  text: `🔍 **Refined Search Results** for "${combinedQuery}":`,
-                  blocks,
-                  unfurl_links: false
-                });
-
-                await updateMessage("Refined search completed");
-                return;
-
-              } catch (err) {
-                console.error("[DEBUG] Error in refined Amazon search:", err);
-                await client.chat.postMessage({
-                  channel: channel,
-                  thread_ts: rootTs,
-                  text: `Sorry, there was an error with your refined search. Please try again or use the original results.`
-                });
-                await updateMessage("Error in refined search");
-                return;
-              }
-            } else {
-              console.log("[DEBUG] ❌ Could not extract original query from bot message");
-              console.log("[DEBUG] Bot message content:", botResponseMessage.content);
-              console.log("[DEBUG] Treating user message as new search query");
-
-              // Fallback: treat user message as a brand new search query
-              const newQuery = userMessageText.trim();
-              console.log("[DEBUG] Using user message as new query:", newQuery);
-
-              if (newQuery.length < 2) {
-                await client.chat.postMessage({
-                  channel,
-                  thread_ts: rootTs,
-                  text: "Please provide a more specific search query (at least 2 characters)."
-                });
-                await updateMessage("Query too short");
-                return;
-              }
-
-              await updateMessage(`Searching for: "${newQuery}"`);
-
-              // Execute new search with user's message
-              try {
-                const perPage = 5;
-                const page = 1;
-                const { products, pagination } = await amazonSearchTool.execute({
-                  query: newQuery,
-                  page,
-                  perPage
-                });
-
-                if (!products.length) {
-                  await client.chat.postMessage({
-                    channel: channel,
-                    thread_ts: rootTs,
-                    text: `No products found for "${newQuery}". Try a different search term.`
-                  });
-                  await updateMessage("No products found");
-                  return;
-                }
-
-                const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-                const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, newQuery);
-
-                // Post results using blocks (same as /amazon command)
-                await client.chat.postMessage({
-                  channel: channel,
-                  thread_ts: rootTs,
-                  text: `🔍 **Search Results** for "${newQuery}":`,
-                  blocks,
-                  unfurl_links: false
-                });
-
-                await updateMessage("Search completed");
-                return;
-
-              } catch (err) {
-                console.error("[DEBUG] Error in new search:", err);
-                await client.chat.postMessage({
-                  channel: channel,
-                  thread_ts: rootTs,
-                  text: `Sorry, there was an error searching for "${newQuery}". Please try again.`
-                });
-                await updateMessage("Error in search");
-                return;
-              }
-            }
-          } else {
-            console.log("[DEBUG] No bot Amazon search message found in thread - treating as new search");
-
-            // Fallback: treat user message as a brand new search query
-            const newQuery = userMessageText.trim();
-            console.log("[DEBUG] Using user message as new query:", newQuery);
-
-            if (newQuery.length < 2) {
-              await client.chat.postMessage({
-                channel,
-                thread_ts: rootTs,
-                text: "Please provide a more specific search query (at least 2 characters)."
-              });
-              await updateMessage("Query too short");
-              return;
-            }
-
-            await updateMessage(`Searching for: "${newQuery}"`);
-
-            // Execute new search with user's message
-            try {
-              const perPage = 5;
-              const page = 1;
-              const { products, pagination } = await amazonSearchTool.execute({
-                query: newQuery,
-                page,
-                perPage
-              });
-
-              if (!products.length) {
-                await client.chat.postMessage({
-                  channel: channel,
-                  thread_ts: rootTs,
-                  text: `No products found for "${newQuery}". Try a different search term.`
-                });
-                await updateMessage("No products found");
-                return;
-              }
-
-              const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-              const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, newQuery);
-
-              // Post results using blocks (same as /amazon command)
+            if (!products.length) {
               await client.chat.postMessage({
                 channel: channel,
                 thread_ts: rootTs,
-                text: `🔍 **Search Results** for "${newQuery}":`,
-                blocks,
-                unfurl_links: false
+                text: `❌ Product with ASIN \`${validation.normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
               });
-
-              await updateMessage("Search completed");
-              return;
-
-            } catch (err) {
-              console.error("[DEBUG] Error in new search:", err);
-              await client.chat.postMessage({
-                channel: channel,
-                thread_ts: rootTs,
-                text: `Sorry, there was an error searching for "${newQuery}". Please try again.`
-              });
-              await updateMessage("Error in search");
               return;
             }
+
+            // Format single product (no pagination for ASIN)
+            const blocks = formatProductBlocksStateless([products[0]], 1, 1, validation.normalized, false);
+            await client.chat.postMessage({
+              channel: channel,
+              thread_ts: rootTs,
+              text: `Product Details for ASIN: \`${validation.normalized}\``,
+              blocks,
+            });
+            return;
+          } catch (error) {
+            console.error("[DEBUG] Error in ASIN lookup:", error);
+            await client.chat.postMessage({
+              channel: channel,
+              thread_ts: rootTs,
+              text: "Sorry, there was an error looking up that ASIN. Please try again later."
+            });
+            return;
           }
+        }
+
+        // Execute independent search with user's message (no combining with previous queries)
+        const newQuery = userMessageText.trim();
+        console.log("[DEBUG] Using user message as independent search query:", newQuery);
+
+        if (newQuery.length < 2) {
+          await client.chat.postMessage({
+            channel,
+            thread_ts: rootTs,
+            text: "Please provide a more specific search query (at least 2 characters)."
+          });
+          await updateMessage("Query too short");
+          return;
+        }
+
+        await updateMessage(`Searching for: "${newQuery}"`);
+
+        // Execute independent search
+        try {
+          const perPage = 5;
+          const page = 1;
+          const { products, pagination } = await amazonSearchTool.execute({
+            query: newQuery,
+            page,
+            perPage
+          });
+
+          if (!products.length) {
+            await client.chat.postMessage({
+              channel: channel,
+              thread_ts: rootTs,
+              text: `No products found for "${newQuery}". Try a different search term.`
+            });
+            await updateMessage("No products found");
+            return;
+          }
+
+          const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
+          const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, newQuery);
+
+          // Post results using blocks (same as /amazon command)
+          await client.chat.postMessage({
+            channel: channel,
+            thread_ts: rootTs,
+            text: `🔍 **Search Results** for "${newQuery}":`,
+            blocks,
+            unfurl_links: false
+          });
+
+          await updateMessage("Search completed");
+          return;
+
+        } catch (err) {
+          console.error("[DEBUG] Error in independent search:", err);
+          await client.chat.postMessage({
+            channel: channel,
+            thread_ts: rootTs,
+            text: `Sorry, there was an error searching for "${newQuery}". Please try again.`
+          });
+          await updateMessage("Error in search");
+          return;
         }
 
         // Refinement flow complete - return early to avoid office detection
