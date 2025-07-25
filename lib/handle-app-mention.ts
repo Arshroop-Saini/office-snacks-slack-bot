@@ -3,6 +3,7 @@ import { client, getThread, getUserEmail, getUserProfile, getOfficeForTimezone }
 import { generateResponse } from "./generate-response";
 import { amazonSearchTool } from "./tools/amazon-search.tool";
 import { detectUserIntent, UserIntent } from "./intent-detection";
+import { extractProductName } from "./product-extraction";
 
 // Product type definition (copied from command.ts)
 type Product = {
@@ -267,7 +268,16 @@ export async function handleNewAppMention(
 
       // Check if it's an ASIN query for specific product lookup
       const isAsinQuery = isASIN(userMessageText.trim());
-      const searchQuery = isAsinQuery ? validateASIN(userMessageText.trim()).normalized : userMessageText;
+      let searchQuery: string;
+
+      if (isAsinQuery) {
+        searchQuery = validateASIN(userMessageText.trim()).normalized;
+      } else {
+        // Extract product name from natural language message
+        console.log("[DEBUG] Extracting product name from user message");
+        searchQuery = await extractProductName(userMessageText);
+        console.log("[DEBUG] Using extracted product name for search:", searchQuery);
+      }
 
       if (isAsinQuery) {
         console.log("[DEBUG] ASIN search detected:", userMessageText);
