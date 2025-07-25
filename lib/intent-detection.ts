@@ -18,8 +18,9 @@ export async function detectUserIntent(userMessage: string): Promise<IntentDetec
     const systemPrompt = `You are an intent classifier for an office snacks bot. Analyze the user's message and classify it into one of three intents:
 
 **BUY INTENT**: User wants to purchase a specific product
-- Examples: "buy this", "purchase that", "order this item", contains Amazon URLs/ASINs
-- Usually has clear purchase language or specific product identifiers
+- Examples: "buy this https://amazon.com/...", "buy this B08N5WRWNW", contains Amazon URLs/ASINs
+- MUST contain actual Amazon URL or ASIN to be considered buy intent
+- General phrases like "buy some headphones" should be classified as SEARCH INTENT
 
 **SEARCH INTENT**: User wants to find/discover products  
 - Examples: "coca cola", "wireless headphones", "energy drinks", "find snacks", "show me laptops"

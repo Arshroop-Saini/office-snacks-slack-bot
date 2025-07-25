@@ -207,10 +207,9 @@ export async function handleNewAppMention(
       }
     }
 
-    const buyIntentPattern = /\b(buy|purchase|order|get me)\b/i;
-    const containsBuyIntent = buyIntentPattern.test(userMessageText);
-
-    const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
+    // Only detect purchase intent when there's an actual Amazon link or ASIN
+    // Remove general buy keywords to avoid false positives
+    const isPurchaseRequest = containsAmazonLink || containsAsinBuy;
     console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
 
     // Use LLM to detect user intent (only if not a purchase request)
@@ -395,13 +394,9 @@ export async function handleNewAppMention(
         }
       }
 
-      // Check for general buy intent keywords
-      const buyIntentPattern = /\b(buy|purchase|order|get me)\b/i;
-      const containsBuyIntent = buyIntentPattern.test(userMessageText);
-      console.log("[DEBUG] Contains buy intent:", containsBuyIntent);
-
-      // Determine if this is a purchase request or a refinement query
-      const isPurchaseRequest = containsAmazonLink || containsAsinBuy || containsBuyIntent;
+      // Only consider purchase request if there's an Amazon link or ASIN
+      // Remove general buy keywords to avoid false positives
+      const isPurchaseRequest = containsAmazonLink || containsAsinBuy;
       console.log("[DEBUG] Is purchase request:", isPurchaseRequest);
 
       if (isPurchaseRequest) {
