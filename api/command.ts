@@ -32,6 +32,29 @@ function validateASIN(asin: string): { valid: boolean; normalized: string } {
     };
 }
 
+function extractASINFromURL(url: string): string | null {
+    // Amazon URL patterns that contain ASINs
+    const patterns = [
+        /\/dp\/([B][0-9A-Z]{9})/i,           // /dp/B08N5WRWNW
+        /\/gp\/product\/([B][0-9A-Z]{9})/i,  // /gp/product/B08N5WRWNW
+        /\/product\/([B][0-9A-Z]{9})/i,      // /product/B08N5WRWNW
+        /\/exec\/obidos\/ASIN\/([B][0-9A-Z]{9})/i, // older format
+        /[?&]th=([B][0-9A-Z]{9})/i,          // ?th=B08N5WRWNW (variant)
+    ];
+
+    for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) {
+            const asin = match[1].toUpperCase();
+            // Validate the extracted ASIN
+            if (isASIN(asin)) {
+                return asin;
+            }
+        }
+    }
+    return null;
+}
+
 export const maxDuration = 60;
 
 const MAX_PRODUCTS = 20; // Reduce for Slack payload safety
@@ -380,11 +403,24 @@ export async function POST(request: Request) {
             }
 
             // ASIN Detection and Validation
-            const isAsinQuery = isASIN(query);
+            let finalQuery = query;
+            let isAsinQuery = isASIN(query);
+            let extractedAsin: string | null = null;
+
+            // Check if query is an Amazon URL and extract ASIN
+            if (!isAsinQuery) {
+                extractedAsin = extractASINFromURL(query);
+                if (extractedAsin) {
+                    finalQuery = extractedAsin;
+                    isAsinQuery = true;
+                    console.log("[COMMAND] ASIN extracted from URL:", extractedAsin);
+                }
+            }
+
             if (isAsinQuery) {
-                const validation = validateASIN(query);
+                const validation = validateASIN(finalQuery);
                 if (!validation.valid) {
-                    console.log("[COMMAND] Invalid ASIN format:", query);
+                    console.log("[COMMAND] Invalid ASIN format:", finalQuery);
                     return new Response(
                         JSON.stringify({
                             response_type: "ephemeral",
@@ -394,16 +430,17 @@ export async function POST(request: Request) {
                     );
                 }
                 console.log("[COMMAND] ASIN lookup detected for:", validation.normalized);
+                finalQuery = validation.normalized;
             }
 
             try {
                 const perPage = 5;
                 const page = 1;
-                const { products, pagination } = await amazonSearchTool.execute({ query: isAsinQuery ? validateASIN(query).normalized : query, page, perPage });
+                const { products, pagination } = await amazonSearchTool.execute({ query: finalQuery, page, perPage });
                 if (!products.length) {
                     console.log("[COMMAND] No products found");
                     const errorText = isAsinQuery
-                        ? `❌ Product with ASIN \`${validateASIN(query).normalized}\` not found on Amazon US. Please verify the ASIN or try a different search.`
+                        ? `❌ Product with ASIN \`${finalQuery}\` not found on Amazon US. Please verify the ASIN or try a different search.`
                         : `No products found for \"${query}\".`;
                     return new Response(
                         JSON.stringify({
@@ -418,16 +455,19 @@ export async function POST(request: Request) {
                 let responseBody;
                 if (isAsinQuery) {
                     // For ASIN queries: single product, no pagination
-                    const blocks = formatProductBlocksStateless([products[0]], 1, 1, validateASIN(query).normalized, false);
+                    const blocks = formatProductBlocksStateless([products[0]], 1, 1, finalQuery, false);
+                    const displayText = extractedAsin
+                        ? `Product Details for URL (ASIN: \`${finalQuery}\`):`
+                        : `Product Details for ASIN: \`${finalQuery}\``;
                     responseBody = {
                         response_type: "in_channel",
-                        text: `Product Details for ASIN: \`${validateASIN(query).normalized}\``,
+                        text: displayText,
                         blocks,
                     };
                 } else {
                     // For regular searches: multiple products with pagination
                     const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
-                    const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, query);
+                    const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, finalQuery);
                     responseBody = {
                         response_type: "in_channel",
                         text: `Amazon search results for \"${query}\":`,
