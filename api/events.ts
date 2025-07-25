@@ -52,18 +52,7 @@ export async function POST(request: Request) {
       !event.bot_profile &&
       event.bot_id !== botUserId
     ) {
-      // For DMs without thread_ts, treat as app mention to handle search/conversation
-      if (event.channel_type === "im" && !event.thread_ts) {
-        // Create a synthetic app mention event for DM messages
-        const syntheticEvent = {
-          ...event,
-          type: "app_mention" as const,
-          text: event.text || ""
-        };
-        waitUntil(handleNewAppMention(syntheticEvent, botUserId));
-      } else {
-        waitUntil(handleNewAssistantMessage(event, botUserId));
-      }
+      waitUntil(handleNewAssistantMessage(event, botUserId));
     }
 
     return new Response("Success!", { status: 200 });

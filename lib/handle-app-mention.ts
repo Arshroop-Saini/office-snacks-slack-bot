@@ -227,191 +227,21 @@ export async function handleNewAppMention(
 
     const isProductSearchQuery = userIntent === 'search';
     console.log("[DEBUG] Is product search query:", isProductSearchQuery);
-    console.log("[DEBUG] isInThread:", isInThread);
-    console.log("[DEBUG] channel starts with D:", channel.startsWith('D'));
-    console.log("[DEBUG] Should trigger DM search:", !isInThread && isProductSearchQuery && channel.startsWith('D'));
 
-    // Handle search queries outside of threads
+    // If not in a thread and it's a product search query, redirect to /amazon command
     if (!isInThread && isProductSearchQuery) {
-      // Check if we're in a DM (channel ID starts with 'D') or channel
-      const isDM = channel.startsWith('D');
-
-      if (isDM) {
-        console.log("[DEBUG] Product search query in DM - performing search directly");
-        // In DMs, perform the search directly since /amazon command doesn't work
-        // Use the same search logic as threads
-
-        // Check if it's an ASIN query for specific product lookup
-        const isAsinQuery = isASIN(userMessageText.trim());
-        let searchQuery: string;
-
-        if (isAsinQuery) {
-          searchQuery = validateASIN(userMessageText.trim()).normalized;
-        } else {
-          // Extract product name from natural language message
-          console.log("[DEBUG] Extracting product name from user message in DM");
-          searchQuery = await extractProductName(userMessageText);
-          console.log("[DEBUG] Using extracted product name for DM search:", searchQuery);
-        }
-
-        if (isAsinQuery) {
-          console.log("[DEBUG] ASIN search detected in DM:", userMessageText);
-          const validation = validateASIN(userMessageText.trim());
-          if (!validation.valid) {
-            await client.chat.postMessage({
-              channel,
-              thread_ts: rootTs,
-              text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
-            });
-            return;
-          }
-          await updateMessage(`Looking up product: ${validation.normalized}`);
-        } else {
-          await updateMessage(`Searching for: "${searchQuery}"`);
-        }
-
-        try {
-          const perPage = isAsinQuery ? 1 : 5;
-          const page = 1;
-
-          const { products, pagination } = await amazonSearchTool.execute({
-            query: searchQuery,
-            page,
-            perPage
-          });
-
-          if (!products.length) {
-            const displayQuery = isAsinQuery ? `ASIN \`${searchQuery}\`` : `"${userMessageText}"`;
-            await client.chat.postMessage({
-              channel,
-              thread_ts: rootTs,
-              text: `No products found for ${displayQuery}. Try a different search term.`
-            });
-            await updateMessage("No products found");
-            return;
-          }
-
-          // Use the exact same format as channels/threads
-          const totalPages = isAsinQuery ? 1 : (pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1);
-          const blocks = formatProductBlocksStateless(products.slice(0, 5), 1, totalPages, searchQuery);
-
-          // Post results using blocks (same as channels/threads)
-          const resultText = isAsinQuery ? `📦 **Product Details** for ASIN: \`${searchQuery}\`` : `🔍 **Search Results** for "${userMessageText}":`;
-          await client.chat.postMessage({
-            channel,
-            thread_ts: rootTs,
-            text: resultText,
-            blocks,
-            unfurl_links: false
-          });
-
-          await updateMessage("Search completed");
-          return;
-
-        } catch (err) {
-          console.error("[DEBUG] Error in DM Amazon search:", err);
-          const displayQuery = isAsinQuery ? `ASIN ${searchQuery}` : `"${userMessageText}"`;
-          await client.chat.postMessage({
-            channel,
-            thread_ts: rootTs,
-            text: `Sorry, there was an error searching for ${displayQuery}. Please try again.`
-          });
-          await updateMessage("Error in search");
-          return;
-        }
-      } else {
-        console.log("[DEBUG] Product search query in channel - redirecting to /amazon command");
-        await client.chat.postMessage({
-          channel,
-          thread_ts: rootTs, // Reply in thread to the original message
-          text: `I detected you're looking for products! 🔍\n\nFor product searches, please:\n• Use the \`/amazon\` command here\n• Or tag me with your search query in a thread\n\nExample: \`/amazon ${userMessageText}\``,
-        });
-        return;
-      }
+      console.log("[DEBUG] Product search query in main channel/DM - redirecting to /amazon command");
+      await client.chat.postMessage({
+        channel,
+        thread_ts: rootTs, // Reply in thread to the original message
+        text: `I detected you're looking for products! 🔍\n\nFor product searches, please:\n• Use the \`/amazon\` command here\n• Or tag me with your search query in a thread\n\nExample: \`/amazon ${userMessageText}\``,
+      });
+      return;
     }
 
     // Handle different intents based on context
     if (userIntent === 'conversation') {
       console.log("[DEBUG] Natural conversation detected - switching to chatbot mode");
-
-      // Special case: If this is a DM and the conversation might be about products,
-      // re-run intent detection with stricter criteria to catch missed searches
-      const isDM = channel.startsWith('D');
-      if (isDM && !isInThread) {
-        // Check if this might be a product search that was misclassified
-        const productKeywords = ['chips', 'snacks', 'energy', 'drink', 'coffee', 'food', 'candy', 'gum', 'nuts', 'crackers', 'bars', 'cereal', 'soda', 'water', 'juice'];
-        const containsProductKeywords = productKeywords.some(keyword =>
-          userMessageText.toLowerCase().includes(keyword)
-        );
-
-        if (containsProductKeywords) {
-          console.log("[DEBUG] DM conversation contains product keywords - treating as search");
-          // Treat this as a search query instead
-          const isAsinQuery = isASIN(userMessageText.trim());
-          let searchQuery: string;
-
-          if (isAsinQuery) {
-            searchQuery = validateASIN(userMessageText.trim()).normalized;
-            await updateMessage(`Looking up product: ${searchQuery}`);
-          } else {
-            console.log("[DEBUG] Extracting product name from misclassified conversation in DM");
-            searchQuery = await extractProductName(userMessageText);
-            console.log("[DEBUG] Using extracted product name for DM search:", searchQuery);
-            await updateMessage(`Searching for: "${searchQuery}"`);
-          }
-
-          try {
-            const perPage = isAsinQuery ? 1 : 5;
-            const page = 1;
-
-            const { products, pagination } = await amazonSearchTool.execute({
-              query: searchQuery,
-              page,
-              perPage
-            });
-
-            if (!products.length) {
-              const displayQuery = isAsinQuery ? `ASIN \`${searchQuery}\`` : `"${userMessageText}"`;
-              await client.chat.postMessage({
-                channel,
-                thread_ts: rootTs,
-                text: `No products found for ${displayQuery}. Try a different search term.`
-              });
-              await updateMessage("No products found");
-              return;
-            }
-
-            // Use the exact same format as channels/threads
-            const totalPages = isAsinQuery ? 1 : (pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1);
-            const blocks = formatProductBlocksStateless(products.slice(0, 5), 1, totalPages, searchQuery);
-
-            // Post results using blocks (same as channels/threads)
-            const resultText = isAsinQuery ? `📦 **Product Details** for ASIN: \`${searchQuery}\`` : `🔍 **Search Results** for "${userMessageText}":`;
-            await client.chat.postMessage({
-              channel,
-              thread_ts: rootTs,
-              text: resultText,
-              blocks,
-              unfurl_links: false
-            });
-
-            await updateMessage("Search completed");
-            return;
-
-          } catch (err) {
-            console.error("[DEBUG] Error in DM Amazon search (from conversation):", err);
-            const displayQuery = isAsinQuery ? `ASIN ${searchQuery}` : `"${userMessageText}"`;
-            await client.chat.postMessage({
-              channel,
-              thread_ts: rootTs,
-              text: `Sorry, there was an error searching for ${displayQuery}. Please try again.`
-            });
-            await updateMessage("Error in search");
-            return;
-          }
-        }
-      }
-
       await updateMessage("💭 Thinking...");
 
       // Get thread history for context
@@ -733,32 +563,21 @@ export async function handleNewAppMention(
     let result = await generateResponse(messages, updateMessage, userEmail ?? undefined);
     console.log("Generated response for app mention:", result);
 
-    // Check if result is too long for blocks (Slack limit is 3000 chars)
-    if (result.length > 2900) {
-      console.log("[DEBUG] App mention response too long for blocks, sending as plain text");
-      await client.chat.postMessage({
-        channel: safeChannel,
-        thread_ts: safeThreadTs,
-        text: result,
-        unfurl_links: false,
-      });
-    } else {
-      await client.chat.postMessage({
-        channel: safeChannel,
-        thread_ts: safeThreadTs,
-        text: result,
-        unfurl_links: false,
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: result,
-            },
+    await client.chat.postMessage({
+      channel: safeChannel,
+      thread_ts: safeThreadTs,
+      text: result,
+      unfurl_links: false,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: result,
           },
-        ],
-      });
-    }
+        },
+      ],
+    });
 
     await updateMessage("");
   } catch (error) {
