@@ -662,21 +662,32 @@ export async function handleNewAppMention(
     let result = await generateResponse(messages, updateMessage, userEmail ?? undefined);
     console.log("Generated response for app mention:", result);
 
-    await client.chat.postMessage({
-      channel: safeChannel,
-      thread_ts: safeThreadTs,
-      text: result,
-      unfurl_links: false,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: result,
+    // Check if result is too long for blocks (Slack limit is 3000 chars)
+    if (result.length > 2900) {
+      console.log("[DEBUG] App mention response too long for blocks, sending as plain text");
+      await client.chat.postMessage({
+        channel: safeChannel,
+        thread_ts: safeThreadTs,
+        text: result,
+        unfurl_links: false,
+      });
+    } else {
+      await client.chat.postMessage({
+        channel: safeChannel,
+        thread_ts: safeThreadTs,
+        text: result,
+        unfurl_links: false,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: result,
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
+    }
 
     await updateMessage("");
   } catch (error) {

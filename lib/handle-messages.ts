@@ -39,6 +39,14 @@ export async function handleNewAssistantMessage(
   event: GenericMessageEvent,
   botUserId: string
 ) {
+  console.log("[DEBUG] handleNewAssistantMessage called with:", {
+    type: event.type,
+    channel: event.channel,
+    thread_ts: event.thread_ts,
+    text: event.text?.substring(0, 100) + "...",
+    hasAppMention: event.text?.includes(`<@${botUserId}>`)
+  });
+
   if (
     event.bot_id ||
     event.bot_id === botUserId ||
@@ -46,6 +54,12 @@ export async function handleNewAssistantMessage(
     !event.thread_ts
   )
     return;
+
+  // Skip if this message contains an app mention - let handleNewAppMention handle it
+  if (event.text?.includes(`<@${botUserId}>`)) {
+    console.log("[DEBUG] Message contains app mention, skipping handleNewAssistantMessage");
+    return;
+  }
 
   const { thread_ts, channel, user } = event;
 
@@ -63,21 +77,32 @@ export async function handleNewAssistantMessage(
     let result = await generateResponse(messages, updateStatus, userEmail ?? undefined);
     console.log("Generated response for assistant message:", result);
 
-    await client.chat.postMessage({
-      channel: channel,
-      thread_ts: thread_ts,
-      text: result,
-      unfurl_links: false,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: result,
+    // Check if result is too long for blocks (Slack limit is 3000 chars)
+    if (result.length > 2900) {
+      console.log("[DEBUG] Response too long for blocks, sending as plain text");
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: thread_ts,
+        text: result,
+        unfurl_links: false,
+      });
+    } else {
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: thread_ts,
+        text: result,
+        unfurl_links: false,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: result,
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
+    }
 
     await updateStatus("");
   } catch (error) {
