@@ -288,29 +288,18 @@ export async function handleNewAppMention(
             return;
           }
 
-          // For DMs, send simpler text-based results instead of complex blocks
-          let resultsText = isAsinQuery
-            ? `📦 **Product Details** for ASIN: \`${searchQuery}\`\n\n`
-            : `🔍 **Search Results** for "${userMessageText}":\n\n`;
+          // Use the exact same format as channels/threads
+          const totalPages = isAsinQuery ? 1 : (pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1);
+          const blocks = formatProductBlocksStateless(products.slice(0, 5), 1, totalPages, searchQuery);
 
-          for (let i = 0; i < Math.min(products.length, 5); i++) {
-            const product = products[i];
-            resultsText += `**${i + 1}. ${product.title}**\n`;
-            resultsText += `Price: ${product.price ?? "N/A"} | Rating: ${product.rating ?? "N/A"} (${product.ratings_total ?? "N/A"})\n`;
-            resultsText += `ASIN: ${product.asin ?? "N/A"}\n`;
-            resultsText += `${product.url}\n\n`;
-          }
-
-          // Add pagination info for regular searches
-          if (!isAsinQuery && pagination && pagination.other_pages) {
-            const totalPages = Object.keys(pagination.other_pages).length + 1;
-            resultsText += `_Showing page 1 of ${totalPages}. Use \`@bot ${searchQuery} page 2\` for more results._`;
-          }
-
+          // Post results using blocks (same as channels/threads)
+          const resultText = isAsinQuery ? `📦 **Product Details** for ASIN: \`${searchQuery}\`` : `🔍 **Search Results** for "${userMessageText}":`;
           await client.chat.postMessage({
             channel,
             thread_ts: rootTs,
-            text: resultsText
+            text: resultText,
+            blocks,
+            unfurl_links: false
           });
 
           await updateMessage("Search completed");
