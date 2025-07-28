@@ -460,7 +460,7 @@ export async function POST(request: Request) {
                         ? `Product Details for URL (ASIN: \`${finalQuery}\`):`
                         : `Product Details for ASIN: \`${finalQuery}\``;
                     responseBody = {
-                        response_type: "in_channel",
+                        response_type: "in_thread",
                         text: displayText,
                         blocks,
                     };
@@ -469,7 +469,7 @@ export async function POST(request: Request) {
                     const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
                     const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, finalQuery);
                     responseBody = {
-                        response_type: "in_channel",
+                        response_type: "in_thread",
                         text: `Amazon search results for \"${query}\":`,
                         blocks,
                     };
