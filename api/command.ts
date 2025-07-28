@@ -459,37 +459,19 @@ export async function POST(request: Request) {
                     const displayText = extractedAsin
                         ? `Product Details for URL (ASIN: \`${finalQuery}\`):`
                         : `Product Details for ASIN: \`${finalQuery}\``;
-
-                    // Post results using Web API to get a message timestamp for threading
-                    const messageResponse = await client.chat.postMessage({
-                        channel: params.channel_id,
+                    responseBody = {
+                        response_type: "in_channel",
                         text: displayText,
                         blocks,
-                        unfurl_links: false
-                    });
-
-                    // Return ephemeral response acknowledging the command
-                    responseBody = {
-                        response_type: "ephemeral",
-                        text: `Search completed! Results posted above. You can thread to that message for follow-up questions.`,
                     };
                 } else {
                     // For regular searches: multiple products with pagination
                     const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
                     const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, finalQuery);
-
-                    // Post results using Web API to get a message timestamp for threading
-                    const messageResponse = await client.chat.postMessage({
-                        channel: params.channel_id,
+                    responseBody = {
+                        response_type: "in_channel",
                         text: `Amazon search results for \"${query}\":`,
                         blocks,
-                        unfurl_links: false
-                    });
-
-                    // Return ephemeral response acknowledging the command
-                    responseBody = {
-                        response_type: "ephemeral",
-                        text: `Search completed! Results posted above. You can thread to that message for follow-up questions.`,
                     };
                 }
                 console.log("[COMMAND] Slash command response body:", JSON.stringify(responseBody));
