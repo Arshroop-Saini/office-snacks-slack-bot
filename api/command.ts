@@ -459,8 +459,18 @@ export async function POST(request: Request) {
                     const displayText = extractedAsin
                         ? `Product Details for URL (ASIN: \`${finalQuery}\`):`
                         : `Product Details for ASIN: \`${finalQuery}\``;
+
+                    // Add a note about threading
+                    blocks.push({
+                        type: "section",
+                        text: {
+                            type: "mrkdwn",
+                            text: "💡 *Tip:* Thread to this message for follow-up questions or to refine your search!"
+                        }
+                    });
+
                     responseBody = {
-                        response_type: "in_thread",
+                        response_type: "in_channel",
                         text: displayText,
                         blocks,
                     };
@@ -468,8 +478,18 @@ export async function POST(request: Request) {
                     // For regular searches: multiple products with pagination
                     const totalPages = pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1;
                     const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, finalQuery);
+
+                    // Add a note about threading
+                    blocks.push({
+                        type: "section",
+                        text: {
+                            type: "mrkdwn",
+                            text: "💡 *Tip:* Thread to this message for follow-up questions or to refine your search!"
+                        }
+                    });
+
                     responseBody = {
-                        response_type: "in_thread",
+                        response_type: "in_channel",
                         text: `Amazon search results for \"${query}\":`,
                         blocks,
                     };
