@@ -541,7 +541,7 @@ export async function handleNewAppMention(
         await client.chat.postMessage({
           channel,
           thread_ts: rootTs,
-          text: `We have offices in both New York City and Miami for your timezone. Please reply with your office location (choose from: Miami Office, New York Office).`,
+          text: `We have offices in both New York City and Miami for your timezone. Please tag me and reply with your office location (choose from: Miami Office, New York Office).\n\nExample: @SnackBot Miami Office`,
         });
         return;
       } else {
@@ -549,7 +549,7 @@ export async function handleNewAppMention(
         await client.chat.postMessage({
           channel,
           thread_ts: rootTs,
-          text: `I couldn't detect your office location from your timezone. Please reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).`,
+          text: `I couldn't detect your office location from your timezone. Please tag me and reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).\n\nExample: @SnackBot Miami Office`,
         });
         return;
       }
