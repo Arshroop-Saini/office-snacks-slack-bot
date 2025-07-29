@@ -165,6 +165,92 @@ const updateStatusUtil = async (
   return updateMessage;
 };
 
+// Reusable function to handle Amazon search logic
+async function performAmazonSearch(
+  userMessageText: string,
+  channel: string,
+  threadTs: string,
+  updateMessage: (status: string) => Promise<void>
+) {
+  console.log("[DEBUG] Performing Amazon search for:", userMessageText);
+
+  // Check if it's an ASIN query for specific product lookup
+  const isAsinQuery = isASIN(userMessageText.trim());
+  let searchQuery: string;
+
+  if (isAsinQuery) {
+    searchQuery = validateASIN(userMessageText.trim()).normalized;
+  } else {
+    // Extract product name from natural language message
+    console.log("[DEBUG] Extracting product name from user message");
+    searchQuery = await extractProductName(userMessageText);
+    console.log("[DEBUG] Using extracted product name for search:", searchQuery);
+  }
+
+  if (isAsinQuery) {
+    console.log("[DEBUG] ASIN search detected:", userMessageText);
+    const validation = validateASIN(userMessageText.trim());
+    if (!validation.valid) {
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: threadTs,
+        text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
+      });
+      return;
+    }
+    await updateMessage(`Looking up product: ${validation.normalized}`);
+  } else {
+    await updateMessage(`Searching for: "${userMessageText}"`);
+  }
+
+  try {
+    const perPage = isAsinQuery ? 1 : 5;
+    const page = 1;
+
+    const { products, pagination } = await amazonSearchTool.execute({
+      query: searchQuery,
+      page,
+      perPage
+    });
+
+    if (!products.length) {
+      const displayQuery = isAsinQuery ? `ASIN \`${searchQuery}\`` : `"${userMessageText}"`;
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: threadTs,
+        text: `No products found for ${displayQuery}. Try a different search term.`
+      });
+      await updateMessage("No products found");
+      return;
+    }
+
+    const totalPages = isAsinQuery ? 1 : (pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1);
+    const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, searchQuery);
+
+    // Post results using blocks
+    const resultText = isAsinQuery ? `📦 **Product Details** for ASIN: \`${searchQuery}\`` : `🔍 **Search Results** for "${userMessageText}":`;
+    await client.chat.postMessage({
+      channel: channel,
+      thread_ts: threadTs,
+      text: resultText,
+      blocks,
+      unfurl_links: false
+    });
+
+    await updateMessage("Search completed");
+
+  } catch (err) {
+    console.error("[DEBUG] Error in Amazon search:", err);
+    const displayQuery = isAsinQuery ? `ASIN ${searchQuery}` : `"${userMessageText}"`;
+    await client.chat.postMessage({
+      channel: channel,
+      thread_ts: threadTs,
+      text: `Sorry, there was an error searching for ${displayQuery}. Please try again.`
+    });
+    await updateMessage("Error in search");
+  }
+}
+
 export async function handleNewAppMention(
   event: AppMentionEvent,
   botUserId: string,
@@ -228,14 +314,10 @@ export async function handleNewAppMention(
     const isProductSearchQuery = userIntent === 'search';
     console.log("[DEBUG] Is product search query:", isProductSearchQuery);
 
-    // If not in a thread and it's a product search query, redirect to /amazon command
+    // If not in a thread and it's a product search query, perform search and reply in thread
     if (!isInThread && isProductSearchQuery) {
-      console.log("[DEBUG] Product search query in main channel/DM - redirecting to /amazon command");
-      await client.chat.postMessage({
-        channel,
-        thread_ts: rootTs, // Reply in thread to the original message
-        text: `I detected you're looking for products! 🔍\n\nFor product searches, please:\n• Use the \`/amazon\` command here\n• Or tag me with your search query in a thread\n\nExample: \`/amazon ${userMessageText}\``,
-      });
+      console.log("[DEBUG] Product search query in main channel/DM - performing search and replying in thread");
+      await performAmazonSearch(userMessageText, channel, rootTs, updateMessage);
       return;
     }
 
@@ -265,84 +347,8 @@ export async function handleNewAppMention(
     // Handle search queries in threads
     if (userIntent === 'search' && isInThread) {
       console.log("[DEBUG] Search query detected in thread - executing Amazon search");
-
-      // Check if it's an ASIN query for specific product lookup
-      const isAsinQuery = isASIN(userMessageText.trim());
-      let searchQuery: string;
-
-      if (isAsinQuery) {
-        searchQuery = validateASIN(userMessageText.trim()).normalized;
-      } else {
-        // Extract product name from natural language message
-        console.log("[DEBUG] Extracting product name from user message");
-        searchQuery = await extractProductName(userMessageText);
-        console.log("[DEBUG] Using extracted product name for search:", searchQuery);
-      }
-
-      if (isAsinQuery) {
-        console.log("[DEBUG] ASIN search detected:", userMessageText);
-        const validation = validateASIN(userMessageText.trim());
-        if (!validation.valid) {
-          await client.chat.postMessage({
-            channel: channel,
-            thread_ts: rootTs,
-            text: `❌ Invalid ASIN format. ASINs should be 10 characters starting with 'B' (e.g., B0DWQC12R5).`
-          });
-          return;
-        }
-        await updateMessage(`Looking up product: ${validation.normalized}`);
-      } else {
-        await updateMessage(`Searching for: "${userMessageText}"`);
-      }
-
-      try {
-        const perPage = isAsinQuery ? 1 : 5;
-        const page = 1;
-
-        const { products, pagination } = await amazonSearchTool.execute({
-          query: searchQuery,
-          page,
-          perPage
-        });
-
-        if (!products.length) {
-          const displayQuery = isAsinQuery ? `ASIN \`${searchQuery}\`` : `"${userMessageText}"`;
-          await client.chat.postMessage({
-            channel: channel,
-            thread_ts: rootTs,
-            text: `No products found for ${displayQuery}. Try a different search term.`
-          });
-          await updateMessage("No products found");
-          return;
-        }
-
-        const totalPages = isAsinQuery ? 1 : (pagination && pagination.other_pages ? Object.keys(pagination.other_pages).length + 1 : 1);
-        const blocks = formatProductBlocksStateless(products.slice(0, 5), page, totalPages, searchQuery);
-
-        // Post results using blocks
-        const resultText = isAsinQuery ? `📦 **Product Details** for ASIN: \`${searchQuery}\`` : `🔍 **Search Results** for "${userMessageText}":`;
-        await client.chat.postMessage({
-          channel: channel,
-          thread_ts: rootTs,
-          text: resultText,
-          blocks,
-          unfurl_links: false
-        });
-
-        await updateMessage("Search completed");
-        return;
-
-      } catch (err) {
-        console.error("[DEBUG] Error in Amazon search:", err);
-        const displayQuery = isAsinQuery ? `ASIN ${searchQuery}` : `"${userMessageText}"`;
-        await client.chat.postMessage({
-          channel: channel,
-          thread_ts: rootTs,
-          text: `Sorry, there was an error searching for ${displayQuery}. Please try again.`
-        });
-        await updateMessage("Error in search");
-        return;
-      }
+      await performAmazonSearch(userMessageText, channel, rootTs, updateMessage);
+      return;
     }
 
     console.log("[DEBUG] Proceeding with purchase flow or thread-based search");
