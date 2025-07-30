@@ -168,6 +168,10 @@ export const generateResponse = async (
     // Additional cleanup for product names that might be on separate lines
     processedText = processedText.replace(/^!([A-Za-z0-9\s&'-,.()]+)$/gm, '$1');
 
+    // Remove standalone product references with exclamation marks (common AI pattern)
+    processedText = processedText.replace(/\n!([A-Za-z0-9\s&'-,.()]+)\n/g, '\n$1\n');
+    processedText = processedText.replace(/\n!([A-Za-z0-9\s&'-,.()]+)$/g, '\n$1');
+
     return processedText;
 
   } catch (error) {
