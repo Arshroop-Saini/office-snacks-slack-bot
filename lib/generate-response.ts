@@ -163,7 +163,10 @@ export const generateResponse = async (
     let processedText = text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*");
 
     // Remove exclamation marks before product names in order confirmations
-    processedText = processedText.replace(/!([A-Za-z0-9\s&'-]+)/g, '$1');
+    processedText = processedText.replace(/!([A-Za-z0-9\s&'-,.()]+)/g, '$1');
+
+    // Additional cleanup for product names that might be on separate lines
+    processedText = processedText.replace(/^!([A-Za-z0-9\s&'-,.()]+)$/gm, '$1');
 
     return processedText;
 
