@@ -148,7 +148,7 @@ SOLANA_RPC_URL=your-solana-rpc-url
 CROSSMINT_API_KEY=your-crossmint-api-key
 
 # Office Addresses (JSON string array of objects, with these exact properties)
-OFFICE_ADDRESSES='[{"name":"Main Office","line1":"123 Market St","line2":"Suite 100","city":"San Francisco","state":"CA","postalCode":"94105","country":"US"}]'
+OFFICE_ADDRESSES='[{"name":"Miami Office","recipientName":"Alfonso Gómez-Jordana Mañas","line1":"1 SE 3rd Ave","line2":"STE 1440","city":"Miami","state":"FL","postalCode":"33131","country":"US"},{"name":"New York Office","recipientName":"Rodri Fernández Touza","line1":"310 Livingston St","city":"Brooklyn","state":"NY","postalCode":"11217","country":"US"},{"name":"Buenos Aires Office","recipientName":"ACO Workspace","line1":"Av. Raúl Scalabrini Ortiz 1135","city":"Cdad. Autónoma de Buenos Aires","state":"CABA","postalCode":"C1414","country":"AR"},{"name":"Madrid Office","recipientName":"Paella Inc","line1":"Calle de Valverde 2","line2":"8th Floor","city":"Madrid","state":"","postalCode":"28004","country":"ES"}]'
 ```
 
 Replace the placeholder values with your actual tokens.

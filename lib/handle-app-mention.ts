@@ -1,5 +1,5 @@
 import { AppMentionEvent } from "@slack/web-api";
-import { client, getThread, getUserEmail, getUserProfile, getOfficeForTimezone } from "./slack-utils";
+import { client, getThread, getUserEmail, getUserProfile, getOfficeForTimezone, getBotId } from "./slack-utils";
 import { generateResponse } from "./generate-response";
 import { amazonSearchTool } from "./tools/amazon-search.tool";
 import { detectUserIntent, UserIntent } from "./intent-detection";
@@ -538,10 +538,11 @@ export async function handleNewAppMention(
         office = offices[0];
       } else if (offices.length > 1) {
         // Ambiguous: prompt user to choose by typing (no buttons)
+        const botUserId = await getBotId();
         await client.chat.postMessage({
           channel,
           thread_ts: rootTs,
-          text: `We have offices in both New York City and Miami for your timezone. Please tag me and reply with your office location (choose from: Miami Office, New York Office).\n\nExample: @SnackBot Miami Office`,
+          text: `We have offices in both New York City and Miami for your timezone. Please copy one of these commands and paste it in the thread or the channel to specify your office:\n\n<@${botUserId}> Miami Office\n<@${botUserId}> New York Office`,
         });
         return;
       } else {
@@ -549,7 +550,7 @@ export async function handleNewAppMention(
         await client.chat.postMessage({
           channel,
           thread_ts: rootTs,
-          text: `I couldn't detect your office location from your timezone. Please tag me and reply with your office location (choose from: Miami Office, New York Office, Buenos Aires Office, Madrid Office).\n\nExample: @SnackBot Miami Office`,
+          text: `I couldn't detect your office location from your timezone. Please copy one of these commands and paste it in the thread or the channel to specify your office:\n\n<@${botUserId}> Miami Office\n<@${botUserId}> New York Office\n<@${botUserId}> Buenos Aires Office\n<@${botUserId}> Madrid Office`,
         });
         return;
       }
