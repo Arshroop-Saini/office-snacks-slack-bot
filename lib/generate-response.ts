@@ -277,6 +277,14 @@ For the purchase process:
 4. Use 'usdc' on 'solana' for payment
 5. The recipient.email MUST be the email that you already have from Slack (as every user has an email address with Slack account), do not set recipient.walletAddress
 6. **IMPORTANT**: For the recipient.physicalAddress, use the office address from the get_office_addresses tool. The recipient.name should be the recipientName from the office address data (the office manager's name), NOT the user's name from Slack.
+
+**OFFICE ADDRESS MAPPING** - Use these exact addresses based on the office location:
+- **Miami Office**: recipient.name = "Alfonso Gómez-Jordana Mañas", address = "1 SE 3rd Ave, STE 1440, Miami, FL 33131, US"
+- **New York Office**: recipient.name = "Rodri Fernández Touza", address = "310 Livingston St, Brooklyn, NY 11217, US"  
+- **Buenos Aires Office**: recipient.name = "ACO Workspace", address = "Av. Raúl Scalabrini Ortiz 1135, Cdad. Autónoma de Buenos Aires, CABA C1414, AR"
+- **Madrid Office**: recipient.name = "Paella Inc", address = "Calle de Valverde 2, 8th Floor, Madrid 28004, ES"
+
+When creating an order, ALWAYS use the recipient.name and address from this mapping based on the office location, NOT the user's information from Slack.
 7. The payment.payerAddress MUST be '${payerAddress}'
 8. After purchasing the product, assume the payment is successful and the order is complete - do not tell the user the order is awaiting payment
 9. After purchasing the product, if you have the image or image url, show it to the user. Also mention the email addresss that you used from slack so that the user knows which email to check for the order confirmation.
