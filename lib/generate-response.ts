@@ -160,7 +160,12 @@ export const generateResponse = async (
     const text = generateTextResponse.text || "Failed to generate response";
 
     // Convert markdown to Slack mrkdwn format
-    return text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*");
+    let processedText = text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*");
+
+    // Remove exclamation marks before product names in order confirmations
+    processedText = processedText.replace(/!([A-Za-z0-9\s&'-]+(?:Chips|Bars|Drinks|Snacks|Food|Products?|Items?))/g, '$1');
+
+    return processedText;
 
   } catch (error) {
     console.error("🚨 Error in generateResponse:", error);
@@ -290,6 +295,8 @@ When creating an order, ALWAYS use the recipient.name and address from this mapp
 9. After purchasing the product, if you have the image or image url, show it to the user. Also mention the email addresss that you used from slack so that the user knows which email to check for the order confirmation.
 10. **IMPORTANT**: When displaying the order confirmation, always include the price you paid from the quote information (e.g., "Total paid: $23.45 USD"). This shows the user exactly how much was charged for their order.
 11. **PRODUCT DISPLAY**: When showing the product name or link in the confirmation message, display it cleanly without any exclamation marks or special formatting. For example, show "ALOHA Protein Bars" not "!ALOHA Protein Bars".
+
+**CRITICAL**: NEVER add an exclamation mark (!) before product names in order confirmations. Display product names exactly as they appear without any prefix symbols.
 
 Keep your tone friendly, helpful, and enthusiastic. Use emojis occasionally to add personality. After confirming an order, always ask if there's anything else you can help with.
 `;
