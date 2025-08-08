@@ -59,16 +59,37 @@ pnpm install
 4. Get your wallet address:
    - This is the public address of your wallet (starts with `0x`)
 
-5. Setup Crossmint Smart Wallet:
-   - You'll need to create a smart wallet address through Crossmint
-   - Follow Crossmint documentation for creating smart wallets on Base-Sepolia
-   - Note down the smart wallet address
-
-6. Get Base-Sepolia RPC URL:
+5. Get Base-Sepolia RPC URL:
    - You can use public RPC URLs like `https://sepolia.base.org`
    - Or get one from providers like Alchemy, Infura, etc.
 
-### 5. Fund the EVM Wallet
+6. Create Crossmint Smart Wallet:
+   
+   **IMPORTANT:** Your smart wallet MUST be linked to your personal wallet address to avoid authentication errors.
+   
+   **Step 6a: Add your wallet address to environment variables**
+   
+   First, add your personal wallet address to your `.env` file:
+   ```env
+   SIGNER_WALLET_ADDRESS=0x-your-personal-wallet-address
+   ```
+   
+   **Step 6b: Run the smart wallet creation script**
+   
+   ```bash
+   npx tsx create-smart-wallet.ts
+   ```
+   
+   **Step 6c: Update your .env file**
+   
+   The script will output a new smart wallet address. Add it to your `.env` file:
+   ```env
+   SMART_WALLET_ADDRESS=0x-your-new-smart-wallet-address
+   ```
+   
+   > **Critical:** Make sure the smart wallet is created with YOUR personal wallet address as the signer. This ensures that your private key can control the smart wallet for transactions.
+
+### 7. Fund the EVM Wallet
 
 1. Fund the wallet with ETH (for gas fees):
 
@@ -91,7 +112,7 @@ pnpm install
    - Visit [Base Sepolia Explorer](https://sepolia-explorer.base.org/) and search for your wallet address
    - Ensure you have both ETH (for gas) and USDC (for purchases)
 
-### 6. Get a Crossmint Server-Side API Key
+### 8. Get a Crossmint Server-Side API Key
 
 1. Create a Crossmint account if you don't have one already:
 
@@ -117,7 +138,7 @@ pnpm install
 
 6. Copy your new API key and store it securely. You'll need to add it to your environment variables.
 
-### 7. Set Environment Variables
+### 9. Set Environment Variables
 
 Create a `.env` file in the root of your project with the following:
 
@@ -144,12 +165,12 @@ OFFICE_ADDRESSES='[{"name":"Miami Office","recipientName":"Alfonso Gómez-Jordan
 
 Replace the placeholder values with your actual tokens.
 
-### 8. Deploy your app
+### 10. Deploy your app
 
 - If building locally, follow steps in the Local Development section to tunnel your local environment and then copy the tunnel URL.
 - If deploying to Vercel, follow the instructions in the Production Deployment section and copy your deployment URL.
 
-### 9. Update your Slack App configuration:
+### 11. Update your Slack App configuration:
 
 Go to your [Slack App settings](https://api.slack.com/apps)
 

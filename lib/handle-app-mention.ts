@@ -550,10 +550,20 @@ export async function handleNewAppMention(
         await client.chat.postMessage({
           channel,
           thread_ts: rootTs,
-          text: `I couldn't detect your office location from your timezone. Please copy one of these commands and paste it in the thread or the channel to specify your office:\n\n<@${botUserId}> Miami Office\n<@${botUserId}> New York Office\n<@${botUserId}> Buenos Aires Office\n<@${botUserId}> Madrid Office`,
+          text: `I couldn't detect your office location from your timezone. Please copy one of these commands and paste it in the thread or the channel to specify your office:\n\n<@${botUserId}> Miami Office\n<@${botUserId}> New York Office`,
         });
         return;
       }
+    }
+
+    // Check if the office is temporarily unavailable (Buenos Aires or Madrid)
+    if (office && (office.includes("Buenos Aires") || office.includes("Madrid"))) {
+      await client.chat.postMessage({
+        channel,
+        thread_ts: rootTs,
+        text: "🚧 Sorry, we don't service your area right now. We'll be there soon! 🚀\n\nCurrently available offices:\n• Miami Office\n• New York Office",
+      });
+      return;
     }
 
     // After office is determined, always fetch user email if not already set
