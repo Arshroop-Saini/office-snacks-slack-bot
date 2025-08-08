@@ -1,11 +1,8 @@
 import { openai } from "@ai-sdk/openai";
 import { getOnChainTools } from "@goat-sdk/adapter-vercel-ai";
-import { solana } from "@goat-sdk/wallet-solana";
 import { type CoreMessage, generateText } from "ai";
-import { Connection, Keypair } from "@solana/web3.js";
-import bs58 from "bs58";
+import { crossmint } from "@goat-sdk/crossmint";
 import { crossmintHeadlessCheckout } from "@goat-sdk/plugin-crossmint-headless-checkout";
-import { splToken } from "@goat-sdk/plugin-spl-token";
 import { officeAddressesTool } from "./tools/office-addresses.tool";
 import { recommendedSnacksTool } from "./tools/recommended-snacks.tool";
 import { amazonSearchTool } from "./tools/amazon-search.tool";
@@ -70,7 +67,8 @@ function parseCrossmintError(error: any): string | null {
 
   // Wallet/crypto issues
   if (errorString.includes('wallet') ||
-    errorString.includes('solana') ||
+    errorString.includes('base-sepolia') ||
+    errorString.includes('ethereum') ||
     errorString.includes('usdc') ||
     errorString.includes('crypto')) {
     return "❌ **Wallet Issue**: There was a problem with the crypto wallet or blockchain transaction. Please try again or contact support if the issue persists.";
@@ -111,21 +109,30 @@ export const generateResponse = async (
   updateStatus?: (status: string) => void,
   userEmail?: string
 ) => {
-  const payerKeypair = Keypair.fromSecretKey(
-    bs58.decode(process.env.SOLANA_SECRET_KEY as string)
-  );
+  // Get required environment variables for EVM wallet
+  const apiKey = process.env.CROSSMINT_API_KEY as string;
+  const signerSecretKey = process.env.SIGNER_WALLET_SECRET_KEY as string;
+  const rpcProviderUrl = process.env.RPC_PROVIDER_URL as string;
+  const smartWalletAddress = process.env.SMART_WALLET_ADDRESS as string;
+
+  if (!apiKey || !signerSecretKey || !rpcProviderUrl || !smartWalletAddress) {
+    throw new Error("Missing required environment variables for EVM wallet");
+  }
+
+  const { evmSmartWallet } = crossmint(apiKey);
   // Get on-chain tools from GOAT SDK
   const onChainTools = await getOnChainTools({
-    wallet: solana({
-      connection: new Connection(process.env.SOLANA_RPC_URL as string),
-      keypair: payerKeypair,
+    wallet: await evmSmartWallet({
+      address: smartWalletAddress,
+      signer: {
+        secretKey: signerSecretKey as `0x${string}`,
+      },
+      chain: "base-sepolia",
+      provider: rpcProviderUrl,
     }),
     plugins: [
       crossmintHeadlessCheckout({
         apiKey: process.env.CROSSMINT_API_KEY as string,
-      }),
-      splToken({
-        network: "devnet",
       }),
     ],
   });
@@ -149,7 +156,7 @@ export const generateResponse = async (
       messages: messagesWithEmail,
       tools,
       maxSteps: 10,
-      system: getSystemPrompt(payerKeypair.publicKey.toBase58(), userEmail),
+      system: getSystemPrompt(smartWalletAddress, userEmail),
     });
 
     console.log(
@@ -237,7 +244,7 @@ When you detect a product search query, use the search_amazon_products tool to f
 You have access to various tools to help users. Use them when appropriate for user questions:
 
 **Wallet & Blockchain Tools:**
-- get_balance: Check SOL/USDC wallet balance
+- get_balance: Check ETH/USDC wallet balance
 - get_address: Get wallet address
 - get_chain: Check blockchain network info
 - get_token_info_by_symbol: Get token information
@@ -286,7 +293,7 @@ For the purchase process:
 1. Use productLocator format 'amazon:B08SVZ775L'
 2. If a URL is provided, extract the product locator from the provided Amazon URL
 3. Use the office address as the shipping address
-4. Use 'usdc' on 'solana' for payment
+4. Use 'usdc' on 'base-sepolia' for payment
 5. The recipient.email MUST be the email that you already have from Slack (as every user has an email address with Slack account), do not set recipient.walletAddress
 6. **IMPORTANT**: For the recipient.physicalAddress, use the office address from the get_office_addresses tool. The recipient.name should be the recipientName from the office address data (the office manager's name), NOT the user's name from Slack.
 

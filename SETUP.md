@@ -7,7 +7,7 @@ This guide provides detailed instructions for setting up and deploying the Offic
 - [Node.js](https://nodejs.org/) 18+ installed
 - Slack workspace with admin privileges
 - [OpenAI API key](https://platform.openai.com/api-keys)
-- [Solana wallet](https://docs.solana.com/wallet-guide) with private key
+- [EVM wallet](https://metamask.io/) (like MetaMask) with private key for Base-Sepolia
 - [Crossmint API key](https://www.crossmint.com/)
 - [Vercel](https://vercel.com) to deploy the bot
 
@@ -46,61 +46,50 @@ pnpm install
 
 - Install the app to your workspace and note down the "Bot User OAuth Token"
 
-### 4. Generate a Solana Keypair
+### 4. Setup EVM Wallet for Base-Sepolia
 
-1. Install the Solana CLI tools if you haven't already:
+1. Install MetaMask or use your existing EVM wallet
 
-https://docs.anza.xyz/cli/install
+2. Create or import a wallet that you'll use for the bot
 
-2. Generate a new keypair using solana-keygen:
+3. Export your private key:
+   - In MetaMask: Account Details > Export Private Key
+   - Copy the private key (it should start with `0x`)
 
-```bash
-solana-keygen new --outfile ~/my-solana-wallet.json
-```
+4. Get your wallet address:
+   - This is the public address of your wallet (starts with `0x`)
 
-3. You can leave the BIP39 passphrase empty by pressing Enter.
+5. Setup Crossmint Smart Wallet:
+   - You'll need to create a smart wallet address through Crossmint
+   - Follow Crossmint documentation for creating smart wallets on Base-Sepolia
+   - Note down the smart wallet address
 
-4. The command will output your public key and save your keypair to the specified file.
+6. Get Base-Sepolia RPC URL:
+   - You can use public RPC URLs like `https://sepolia.base.org`
+   - Or get one from providers like Alchemy, Infura, etc.
 
-5. To get your private key in base58 format (for the .env file), run:
+### 5. Fund the EVM Wallet
 
-```bash
-cat ~/my-solana-wallet.json | grep -o '\[.*\]' | tr -d '[],' | base58
-```
+1. Fund the wallet with ETH (for gas fees):
 
-6. Copy the generated private key and save it in a secure location.
+   - You'll need a small amount of ETH (around 0.01 ETH) to cover gas fees on Base-Sepolia
+   - You can get test ETH from Base-Sepolia faucets:
+     - [Base Sepolia Faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet)
+     - [Alchemy Base Sepolia Faucet](https://sepoliafaucet.com/)
+   - Transfer the ETH to your wallet's public address
 
-### 5. Fund the Solana Wallet
-
-1. Get your wallet's public key:
-
-```bash
-solana address -k ~/my-solana-wallet.json
-```
-
-2. Fund the wallet with SOL:
-
-   - You'll need a small amount of SOL (around 0.1 SOL) to cover gas fees
-   - You can get SOL from an exchange or use a faucet on devnet for testing
-   - Alternatively, you can use the [Crossmint Fund Wallet API](https://docs.crossmint.com/api-reference/wallets/fund-wallet#fund-wallet) to fund your wallet with SOL
-   - Transfer the SOL to your wallet's public key
-
-3. Fund the wallet with USDC:
+2. Fund the wallet with USDC:
 
    - You'll need USDC for making purchases
-   - You can transfer USDC directly to your wallet's public key
+   - You can transfer USDC directly to your wallet's public address
    - Or use the [Crossmint Fund Wallet API](https://docs.crossmint.com/api-reference/wallets/fund-wallet#fund-wallet) to fund your wallet with USDC
-   - Make sure to use the correct USDC token address for your network (mainnet/devnet)
+   - Make sure to use the correct USDC token address for Base-Sepolia network
 
-4. Verify your balances:
+3. Verify your balances:
 
-```bash
-# Check SOL balance
-solana balance <your-wallet-public-key>
-
-# Check USDC balance (requires a token account)
-spl-token accounts --owner <your-wallet-public-key>
-```
+   - Check your wallet in MetaMask or any block explorer
+   - Visit [Base Sepolia Explorer](https://sepolia-explorer.base.org/) and search for your wallet address
+   - Ensure you have both ETH (for gas) and USDC (for purchases)
 
 ### 6. Get a Crossmint Server-Side API Key
 
@@ -109,7 +98,7 @@ spl-token accounts --owner <your-wallet-public-key>
    - [Staging Console](https://staging.crossmint.com/console) (for development)
    - [Production Console](https://www.crossmint.com/console) (for production)
 
-   > **Important**: When using Crossmint's staging environment, you should also use Solana's devnet for testing. Similarly, when using Crossmint's production environment, you should use Solana's mainnet. This ensures compatibility between the environments.
+   > **Important**: When using Crossmint's staging environment, you should also use Base-Sepolia testnet for testing. Similarly, when using Crossmint's production environment, you should use Base mainnet. This ensures compatibility between the environments.
 
    > **Note**: While purchases will work in both staging and production environments, physical products ordered through the staging environment will not be delivered. Use staging for testing the payment flow and production for actual product orders.
 
@@ -140,9 +129,11 @@ SLACK_SIGNING_SECRET=your-signing-secret
 # OpenAI Credentials
 OPENAI_API_KEY=your-openai-api-key
 
-# Solana Wallet
-SOLANA_SECRET_KEY=your-solana-private-key
-SOLANA_RPC_URL=your-solana-rpc-url
+# EVM Wallet for Base-Sepolia
+SIGNER_WALLET_SECRET_KEY=0x-your-evm-private-key
+RPC_PROVIDER_URL=https://sepolia.base.org
+SMART_WALLET_ADDRESS=your-crossmint-smart-wallet-address
+SIGNER_WALLET_ADDRESS=your-evm-wallet-address
 
 # Crossmint API Key
 CROSSMINT_API_KEY=your-crossmint-api-key
@@ -208,8 +199,10 @@ Make sure to modify the subscription URL to the `untun` URL.
    - `SLACK_BOT_TOKEN`
    - `SLACK_SIGNING_SECRET`
    - `OPENAI_API_KEY`
-   - `SOLANA_SECRET_KEY`
-   - `SOLANA_RPC_URL`
+   - `SIGNER_WALLET_SECRET_KEY`
+   - `RPC_PROVIDER_URL`
+   - `SMART_WALLET_ADDRESS`
+   - `SIGNER_WALLET_ADDRESS`
    - `CROSSMINT_API_KEY`
 
 4. After deployment, Vercel will provide you with a production URL
@@ -245,7 +238,7 @@ The bot maintains context within both threads and direct messages, so it can fol
 
    - Example: "Buy this https://www.amazon.com/Croix-Sparkling-Water-Grapefruit-Count/dp/B01MTDGVVY/"
 
-3. **Financial Information**: The bot can share its wallet address and USDC balance.
+3. **Financial Information**: The bot can share its wallet address and ETH/USDC balance.
    - Example: "What's your wallet address and USDC balance?"
 
 ### Extending with New Tools

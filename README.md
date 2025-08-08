@@ -19,7 +19,7 @@ A powerful AI assistant that helps your team order office snacks and supplies di
 - **"Select This" Buttons**: One-click product selection for easy purchasing
 
 ### 💳 **Crypto-Powered Purchasing**
-- **USDC Payments**: Pay with USDC on Solana for all purchases
+- **USDC Payments**: Pay with USDC on Base-Sepolia for all purchases
 - **Crossmint Integration**: Secure on-chain payments for physical products
 - **Automatic Office Detection**: Smart timezone-based office location detection
 - **Email Receipts**: Instant confirmation emails with purchase details
@@ -95,7 +95,7 @@ The bot uses AI to understand your intent:
 ### **3. Seamless Purchasing**
 - **Office Detection**: Automatically detects your office from timezone
 - **Manual Selection**: Choose office if multiple options available
-- **Crypto Payment**: Pay with USDC on Solana
+- **Crypto Payment**: Pay with USDC on Base-Sepolia
 - **Confirmation**: Get email receipt with order details
 
 ### **4. Order Management**
@@ -109,7 +109,7 @@ The bot uses AI to understand your intent:
 - **[OpenAI GPT-4o-mini](https://openai.com/)**: Intelligent intent detection and product extraction
 - **[GOAT SDK](https://github.com/goat-sdk/goat/)**: On-chain tools and crypto payments
 - **[Crossmint Headless Checkout](https://docs.crossmint.com/)**: Secure on-chain payments for physical products
-- **[Solana Blockchain](https://solana.com/)**: Fast, low-cost crypto transactions
+- **[Base-Sepolia Blockchain](https://base.org/)**: Fast, low-cost EVM-compatible crypto transactions
 - **[Slack API](https://api.slack.com)**: Seamless messaging integration
 - **[SearchAPI.io](https://www.searchapi.io/)**: Amazon product search and data
 
