@@ -240,6 +240,35 @@ Make sure to modify the subscription URL to the `untun` URL.
      - `assistant_thread_started`
      - `message:im`
 
+### Production (Base mainnet) Checklist
+
+Use this checklist to switch from Base-Sepolia (staging) to Base mainnet (production) without code changes:
+
+1. Environment
+   - Set `CROSSMINT_ENV=production`
+   - Set `CROSSMINT_API_KEY` to your Production key (from the Crossmint Production console)
+   - Set `RPC_PROVIDER_URL` to a Base mainnet RPC (e.g. `https://mainnet.base.org` or your Alchemy/Infura mainnet URL)
+
+2. Smart Wallet (Production)
+   - Ensure `SIGNER_WALLET_ADDRESS` and `SIGNER_WALLET_SECRET_KEY` are your production wallet
+   - Create a production smart wallet linked to your signer by running:
+     ```bash
+     CROSSMINT_ENV=production npx tsx create-smart-wallet.ts
+     ```
+   - Update `.env` with the returned `SMART_WALLET_ADDRESS`
+
+3. App Config
+   - Fund the signer/smart wallet with ETH (gas) and USDC on Base mainnet
+   - In Slack, re-check the Request URL points to your production deployment
+
+4. Optional: Balance Check
+   - Verify balances using the helper script:
+     ```bash
+     node check-balance.js
+     ```
+
+> Note: The bot’s chain selection is environment-based via the RPC you provide. If your org prefers an explicit toggle, add `EVM_CHAIN=base` to `.env` and read it in code.
+
 ## Usage
 
 The bot will respond to:

@@ -2,9 +2,15 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const apiKey = process.env.CROSSMINT_API_KEY; // Use the staging key you have
+const apiKey = process.env.CROSSMINT_API_KEY; // Uses staging or production based on CROSSMINT_ENV
 const walletAddress = process.env.SIGNER_WALLET_ADDRESS;
 const walletSignerSecretKey = process.env.SIGNER_WALLET_SECRET_KEY;
+const crossmintEnv = (process.env.CROSSMINT_ENV || "staging").toLowerCase(); // 'staging' | 'production'
+const crossmintApiBase =
+    process.env.CROSSMINT_API_BASE ||
+    (crossmintEnv === "production"
+        ? "https://www.crossmint.com"
+        : "https://staging.crossmint.com");
 
 if (!apiKey || !walletAddress || !walletSignerSecretKey) {
     console.log("❌ Missing environment variables:");
@@ -17,6 +23,7 @@ if (!apiKey || !walletAddress || !walletSignerSecretKey) {
 console.log("🔄 Creating smart wallet...");
 console.log(`🔑 Signer Address: ${walletAddress}`);
 console.log(`🔐 API Key: ${apiKey.substring(0, 8)}...`);
+console.log(`🌐 Environment: ${crossmintEnv} (${crossmintApiBase})`);
 
 (async () => {
     try {
@@ -41,8 +48,8 @@ console.log(`🔐 API Key: ${apiKey.substring(0, 8)}...`);
 })();
 
 async function createWallet(signerPublicKey: `0x${string}`, apiKey: string) {
-    // Use staging API endpoint
-    const response = await fetch("https://staging.crossmint.com/api/2022-06-09/wallets", {
+    // Use environment-aware API endpoint
+    const response = await fetch(`${crossmintApiBase}/api/2022-06-09/wallets`, {
         method: "POST",
         headers: {
             "X-API-KEY": apiKey,
